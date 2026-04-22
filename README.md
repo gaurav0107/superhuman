@@ -26,7 +26,15 @@ None yet. Add `.md` files under `skills/<skill-name>/SKILL.md` as you build them
 
 ## Installation
 
-Install as a Claude Code plugin pointing at this repo.
+In Claude Code:
+
+```
+/plugin marketplace add https://github.com/gaurav0107/superhuman
+/plugin install superhuman@superhuman
+/reload-plugins
+```
+
+> This repo is private — `gh auth` or a GitHub token with repo read access is required on the machine that installs it.
 
 ## License
 
