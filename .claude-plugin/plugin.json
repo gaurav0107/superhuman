@@ -1,0 +1,16 @@
+{
+  "name": "superhuman",
+  "description": "Personal skills and agents library for Claude Code",
+  "version": "0.1.0",
+  "author": {
+    "name": "gaurav0107"
+  },
+  "homepage": "https://github.com/gaurav0107/superhuman",
+  "repository": "https://github.com/gaurav0107/superhuman",
+  "license": "MIT",
+  "keywords": [
+    "skills",
+    "agents",
+    "claude-code"
+  ]
+}
