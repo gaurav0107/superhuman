@@ -34,8 +34,6 @@ In Claude Code:
 /reload-plugins
 ```
 
-> This repo is private — `gh auth` or a GitHub token with repo read access is required on the machine that installs it.
-
 ## License
 
 MIT
