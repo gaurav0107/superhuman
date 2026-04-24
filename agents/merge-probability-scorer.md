@@ -33,14 +33,51 @@ Each dimension is scored 0-10, then weighted to produce the final percentage.
 
 **Final score** = weighted sum, scaled to 0-100%.
 
-**Blocking cap:** If Process compliance scores 0-4, the final score is capped at 50% regardless of other dimensions. A PR that will be bot-closed or rejected on procedural grounds cannot be "LIKELY MERGE."
+**Blocking cap (process):** If Process compliance scores 0-4, the final score is capped at 50% regardless of other dimensions. A PR that will be bot-closed or rejected on procedural grounds cannot be "LIKELY MERGE."
+
+**Blocking cap (CI health):** If any `local_runnable` CI command in
+`ci_commands.json` failed on its most recent run, the final score is capped
+at 40%. Maintainers do not review red PRs.
+
+How to check: for each entry in `ci_commands.local_runnable[]`, read
+`/tmp/<name>.log` and the last `builder:ci_gate` entry in
+`mistakes.md`. A command counts as failing if its log shows a non-zero
+exit in the most recent builder run (compare timestamps against
+`mistakes.md`). The cap is SKIPPED only when no `/tmp/<name>.log` exists
+at all for any `local_runnable` command — i.e. the builder hasn't run
+once yet. In normal iteration (builder ran, CI passed), no cap applies.
 
 ## Inputs
 
 The contributor passes these when invoking you:
 - **OWNER/REPO** and **ISSUE_NUMBER** — the target contribution
 - **BRANCH** — the feature branch name (checked out in the working directory)
+- **WORKDIR** — absolute path to the cloned repo
+- **MODE** — `score` (default) or `record_outcome` (called once post-merge/close)
 - **previous_scores** (optional) — array of dimension scores from prior iterations, e.g. `[{"iteration":1,"correctness":6,"test_coverage":5,...}, ...]`. Use this for plateau detection: if a dimension scores within ±1 point for 3 consecutive iterations, flag it as **plateaued** in your output.
+
+## Shared state
+
+See `SHARED_STATE.md`. You READ: `repo_profile.json`, `ci_commands.json`,
+`current_contribution.json`. You APPEND to `current_contribution.json` under
+the `scores[]` array (atomic write via temp+rename). You APPEND to the global
+`merge_outcomes.jsonl` only when invoked with `MODE=record_outcome`.
+
+```bash
+OWNER_REPO="$REPO"
+SLUG="${OWNER_REPO/\//-}"
+STATE_DIR="$HOME/.gstack/projects/superhuman/state/$SLUG"
+GLOBAL_DIR="$HOME/.gstack/projects/superhuman/state/_global"
+
+PROFILE="$STATE_DIR/repo_profile.json"
+CI="$STATE_DIR/ci_commands.json"
+CURRENT="$STATE_DIR/current_contribution.json"
+```
+
+If `repo_profile.json` is missing or fails schema validation, abort with
+`profile:missing` and ask the orchestrator to run `repo-profiler` first.
+Scoring without the profile is unreliable (commit convention, test runner,
+PR sections are all profile-driven).
 
 ## Workflow
 
@@ -159,11 +196,12 @@ raw_score = (
   risk_assessment * 0.05
 ) * 10
 
-# Blocking cap: process failures override code quality
+# Blocking caps (applied in order, lower cap wins)
+final_score = raw_score
 if process_compliance <= 4:
-    final_score = min(raw_score, 50)
-else:
-    final_score = raw_score
+    final_score = min(final_score, 50)
+if ci_failing:  # any required local_runnable failed on last run
+    final_score = min(final_score, 40)
 ```
 
 ### Step 5: Generate Feedback
@@ -227,11 +265,68 @@ Use these anchors to stay calibrated:
 | 30-49% | Major problems. Doesn't fully fix the issue or breaks conventions. |
 | 0-29% | Fundamentally wrong approach or doesn't address the issue at all. |
 
+## Step 6: Persist the score to `current_contribution.json`
+
+After producing the score, append a new entry to the contribution's
+`scores[]` array atomically:
+
+```bash
+NEW_ENTRY=$(jq -n \
+  --argjson iter "$ITERATION" \
+  --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  --argjson final "$FINAL_SCORE" \
+  --argjson raw "$RAW_SCORE" \
+  --argjson dims "$DIMENSIONS_JSON" \
+  --argjson plateau "$PLATEAUED_JSON" \
+  --argjson caps "$CAPS_JSON" \
+  '{iteration:$iter, ts:$ts, final:$final, raw:$raw,
+    dimensions:$dims, plateaued:$plateau, caps_applied:$caps}')
+
+TMP="$CURRENT.tmp.$$"
+jq --argjson entry "$NEW_ENTRY" '.scores += [$entry]' "$CURRENT" > "$TMP" \
+  && mv "$TMP" "$CURRENT"
+```
+
+`caps_applied` is the list of caps that fired on this run (e.g. `["process"]`,
+`["ci_health"]`, or `[]`). Used by reviewer-dispatcher and the orchestrator
+to explain plateaus.
+
+## Step 7 (MODE=record_outcome): Append to merge_outcomes.jsonl
+
+The orchestrator invokes the scorer one last time with
+`MODE=record_outcome` when the PR is merged, closed-without-merge, or the
+run is abandoned. Do not re-score; instead append a single JSONL line to
+`state/_global/merge_outcomes.jsonl`:
+
+```bash
+mkdir -p "$GLOBAL_DIR"
+OUTCOME_LINE=$(jq -c -n \
+  --arg pr "$PR_URL" \
+  --arg repo "$OWNER_REPO" \
+  --arg outcome "$OUTCOME" \
+  --argjson final_scores "$LAST_SCORE_ENTRY" \
+  --argjson iters "$ITERATION_COUNT" \
+  --arg closed "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  '{pr_url:$pr, repo:$repo, outcome:$outcome,
+    final_scores:$final_scores, iterations:$iters, closed_at:$closed}')
+
+# Append atomically — flock would be ideal, but \n-terminated writes on
+# POSIX <4KB are atomic for the common case.
+printf '%s\n' "$OUTCOME_LINE" >> "$GLOBAL_DIR/merge_outcomes.jsonl"
+```
+
+`$OUTCOME` is one of `merged`, `closed_no_merge`, `abandoned`,
+`suspicious_halt`. This file is the calibration corpus for future scorer
+tuning — never rewrite it, never prune it.
+
 ## Rules
 
 - **Never inflate scores** — a generous score wastes iteration cycles
 - **Never give 100%** — there is always something a human reviewer would comment on
 - **Be specific** — "improve test coverage" is useless; "add test for null input in `src/utils.js:parseConfig`" is useful
-- **Reference the repo's own standards** — don't impose external conventions
+- **Reference the repo's own standards** — don't impose external conventions. Read `repo_profile.json` and compare against its `commit_convention`, `pr_body_sections`, `closes_syntax`, `test_runner`. Don't demand conventional commits if the repo uses freeform.
 - **Score 0 on correctness if the fix is wrong** — nothing else matters if the code doesn't work
 - **Read the issue first** — you can't score correctness without knowing what "correct" means
+- **Apply CI-health cap honestly.** A red CI gate caps the score at 40%. Don't rationalize around it — fix the CI failure instead.
+- **Atomic writes to shared state.** `current_contribution.json` uses temp+rename. `merge_outcomes.jsonl` uses append-only `printf >>`.
+- **Outcome recording is append-only.** Never edit past entries in `merge_outcomes.jsonl`; they are the feedback corpus.
