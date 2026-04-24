@@ -261,7 +261,23 @@ If no issue scores 8+ after applying the hard filter, mark the repo as "no clear
 
 ### Step 5: Generate Output
 
-Save results to `~/.gstack/projects/custom-agents/repo-shortlist.json`:
+Save results to `~/.gstack/projects/superhuman/state/_global/repo-shortlist.json`
+(create the directory if missing; atomic temp-rename write):
+
+```bash
+GLOBAL_DIR="$HOME/.gstack/projects/superhuman/state/_global"
+mkdir -p "$GLOBAL_DIR"
+TMP="$GLOBAL_DIR/repo-shortlist.json.tmp.$$"
+printf '%s' "$SHORTLIST" | jq . > "$TMP" && mv "$TMP" "$GLOBAL_DIR/repo-shortlist.json"
+```
+
+The orchestrator binds the top result via:
+
+```bash
+REPO=$(jq -r '.repos[0].repo' "$GLOBAL_DIR/repo-shortlist.json")
+```
+
+Shortlist payload shape:
 
 ```json
 {
