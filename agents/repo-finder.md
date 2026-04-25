@@ -246,6 +246,42 @@ gh issue list --repo OWNER/REPO --state open --limit 30 --json number,title,labe
 **Hard filter (skip immediately):**
 - **Skip issues less than 24 hours old.** Check `createdAt` against current timestamp. Fresh issues haven't been triaged by maintainers yet, and racing other contributors to fix an under-specified problem usually produces noise PRs. We want real, settled issues — not a speed race.
 - **Skip issues with closed PRs in the last 24 hours.** Run `gh pr list --repo OWNER/REPO --search "ISSUE_NUMBER" --state closed --limit 5 --json closedAt`. If any PR was closed recently (auto-closed by bots, pending assignment), another contributor is in queue. Skip.
+- **Skip issues with no maintainer triage signal.** An issue must satisfy AT LEAST ONE of:
+  1. A comment on the issue from a top-10 contributor (reuse the `maintainers.txt` from 3c).
+  2. A `good first issue` or `help wanted` label (explicit triage-accepted signal).
+  3. A `kind:*` / `type:*` / `priority:*` / `severity:*` / `area:*` label (maintainer-applied taxonomy — NOT just `needs-triage` / `triage` / `status:need-triage` alone).
+
+  Why this gate exists: a `needs-triage`-only issue with zero maintainer comments is an untriaged feature request or unconfirmed bug report. Shipping a PR against it at Apache-/Airflow-class repos triggers a lazy-consensus or devlist redirect that structurally caps merge probability below 95% regardless of code quality. The prior `has_maintainer_approval` field was additive (+3 bonus), so issues without maintainer approval could still reach rank 1 via the other bonuses. This gate converts it to a prerequisite.
+
+  ```bash
+  # Compute triage-signal boolean (reuses /tmp/maintainers.txt from Step 3c)
+  TRIAGE_OK=false
+
+  # (1) maintainer commented?
+  COMMENTERS=$(gh issue view "$N" --repo "OWNER/REPO" --json comments \
+                 --jq '[.comments[].author.login] | unique | .[]')
+  for c in $COMMENTERS; do
+    if grep -qx "$c" /tmp/maintainers.txt; then TRIAGE_OK=true; break; fi
+  done
+
+  # (2) or has help-wanted / good-first-issue label?
+  LABELS=$(gh issue view "$N" --repo "OWNER/REPO" --json labels \
+             --jq '.labels[].name')
+  if echo "$LABELS" | grep -qiE '^(good first issue|good-first-issue|help wanted|help-wanted)$'; then
+    TRIAGE_OK=true
+  fi
+
+  # (3) or has a maintainer-applied taxonomy label (excluding triage-only markers)?
+  # A kind:/type:/priority:/severity:/area: label is a positive signal. A bare
+  # "needs-triage" or "triage" label alone is NOT — it means the opposite.
+  if echo "$LABELS" | grep -qiE '^(kind:|type:|priority:|severity:|area:)'; then
+    TRIAGE_OK=true
+  fi
+
+  if [ "$TRIAGE_OK" = "false" ]; then
+    skip "no maintainer triage signal"
+  fi
+  ```
 
 Pick the issue that scores highest on:
 - **Is a bug** (not a feature request): +3
@@ -256,6 +292,8 @@ Pick the issue that scores highest on:
 - **No competing open PRs**: +2 (check with `gh pr list --search "ISSUE_NUMBER"`)
 - **Issue age 2-30 days** (settled enough to have been triaged, fresh enough to still be relevant): +1
 - **Scope is small** (likely < 100 lines, single-file fix): +2
+
+Set `best_issue.has_maintainer_approval=true` when condition (1) above matched (explicit maintainer comment), otherwise `false`. Label-only triage still passes the gate — `has_maintainer_approval` just records which kind of triage signal was present.
 
 If no issue scores 8+ after applying the hard filter, mark the repo as "no clear opportunity right now" and exclude from the final list.
 
@@ -353,6 +391,7 @@ To start contributing:
 - **Never include fortress repos** — if external contributor merge ratio is below 15% of non-bot merges, hard skip. A 100K-star repo where maintainers merge everything themselves and external PRs get auto-closed is worse than a 5K-star repo with a 50% external merge rate.
 - **Never include repos with pre-approval PR templates** — if the PR template requires "must be assigned to that issue" or "approved by a maintainer", hard skip. Autonomous agents can't wait days for maintainer assignment.
 - **Never include repos with auto-close-unassigned bots** — if `.github/workflows/` contains a `require-issue-link` or similar bot that auto-closes PRs whose author isn't the issue assignee, hard skip.
+- **Never rank an issue with no maintainer triage signal.** The Step-4 hard filter must pass (maintainer comment, `help wanted`/`good first issue` label, OR a `kind:/type:/priority:/severity:/area:` taxonomy label — `needs-triage` alone doesn't count). A rank-1 feature-request-in-bug-clothing (e.g. apache/airflow#65664) wastes a full orchestrator run on a SUSPICIOUS_HALT.
 - **Stars alone mean nothing** — a 100K-star repo that ignores outside PRs is worse than a 20K-star repo that merges them in 2 days
 - **Responsiveness is king, but only maintainer-to-external responsiveness** — measuring maintainer self-merge speed is useless. What matters is how fast external contributors get merged, which 3c captures.
 - **One issue per repo** — don't list 5 issues per repo. Find the single best one. The contributor agent will re-evaluate anyway.
