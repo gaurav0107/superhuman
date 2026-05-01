@@ -35,7 +35,7 @@ See `SHARED_STATE.md`. You are the sole writer of `repo_profile.json`,
 ```bash
 OWNER_REPO="$REPO"
 SLUG="${OWNER_REPO/\//-}"
-STATE_DIR="$HOME/.gstack/projects/superhuman/state/$SLUG"
+STATE_DIR="$HOME/.superhuman/repos/$SLUG"
 mkdir -p "$STATE_DIR"
 ```
 
@@ -271,4 +271,4 @@ Wrote:
   user owns it.
 - **Atomic writes.** Temp-file + rename for all JSON outputs.
 - **No cross-repo corpus in v2.** Profile is per-repo only. Do not read or
-  write files in `state/_global/` except as specified in SHARED_STATE.md.
+  write files in `global/` except as specified in SHARED_STATE.md.

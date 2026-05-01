@@ -47,7 +47,7 @@ and any `FINDINGS_JSON` provided.
 ```bash
 OWNER_REPO="$REPO"
 SLUG="${OWNER_REPO/\//-}"
-STATE_DIR="$HOME/.gstack/projects/superhuman/state/$SLUG"
+STATE_DIR="$HOME/.superhuman/repos/$SLUG"
 
 cd "$WORKDIR"
 DEFAULT_BRANCH=$(jq -r .default_branch "$STATE_DIR/repo_profile.json")
@@ -248,7 +248,7 @@ jq -c '.local_runnable[]' "$CI" | while read -r entry; do
   fi
 
   echo "=== $NAME (timeout ${TIMEOUT}s) ==="
-  env -i PATH="/usr/local/bin:/usr/bin:/bin" HOME="/tmp/gstack-sandbox" \
+  env -i PATH="/usr/local/bin:/usr/bin:/bin" HOME="/tmp/superhuman-sandbox" \
     timeout "$TIMEOUT" bash -c "cd '$WORKDIR' && $CMD" 2>&1 | tee "/tmp/${NAME}.log"
   RC=${PIPESTATUS[0]}
   if [ "$RC" -ne 0 ]; then

@@ -56,7 +56,54 @@ Deduplicate across all queries. You should have 50-100 unique repos after dedup.
 
 ### Step 2: Fast Filter (eliminate obvious non-starters)
 
-For each repo, run these quick checks. Skip repos that fail any:
+Before any GitHub API call, drop repos that the user has blocklisted or
+that are on cooldown from prior bad outcomes. This is the reputation gate
+and it is the single strongest filter — contributing to a repo that just
+rejected us damages our standing with that maintainer.
+
+```bash
+GLOBAL_DIR="$HOME/.superhuman/global"
+BLOCKLIST="$GLOBAL_DIR/repo_blocklist.json"
+COOLDOWN="$GLOBAL_DIR/repo_cooldown.json"
+NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+reputation_gate() {
+  local repo="$1"
+
+  # 1. Blocklist — user-authored; wins over everything.
+  if [ -f "$BLOCKLIST" ]; then
+    local hit
+    hit=$(jq -r --arg r "$repo" --arg now "$NOW" \
+      '.blocked[] | select(.repo == $r)
+         | select(.expires_at == null or .expires_at > $now)
+         | .reason' "$BLOCKLIST" 2>/dev/null)
+    [ -n "$hit" ] && { echo "SKIP (blocklist): $repo — $hit"; return 1; }
+  fi
+
+  # 2. Cooldown — scorer-derived; auto-expires.
+  if [ -f "$COOLDOWN" ]; then
+    local until triggers
+    until=$(jq -r --arg r "$repo" \
+      '.cooldowns[] | select(.repo == $r) | .cooldown_until // empty' \
+      "$COOLDOWN" 2>/dev/null)
+    if [ -n "$until" ] && [ "$until" \> "$NOW" ]; then
+      triggers=$(jq -r --arg r "$repo" \
+        '.cooldowns[] | select(.repo == $r) | .triggering_outcomes | join(",")' \
+        "$COOLDOWN")
+      echo "SKIP (cooldown until $until): $repo — $triggers"
+      return 1
+    fi
+  fi
+  return 0
+}
+```
+
+Call `reputation_gate "$OWNER/$REPO"` as the first check for each
+candidate in the loop below. Skipped repos do not consume API rate limit
+on the rest of this step.
+
+For each repo that passes the reputation gate, run these quick checks.
+Skip repos that fail any:
 
 ```bash
 # Check: updated in last 30 days (active development)
@@ -299,11 +346,11 @@ If no issue scores 8+ after applying the hard filter, mark the repo as "no clear
 
 ### Step 5: Generate Output
 
-Save results to `~/.gstack/projects/superhuman/state/_global/repo-shortlist.json`
+Save results to `~/.superhuman/global/repo-shortlist.json`
 (create the directory if missing; atomic temp-rename write):
 
 ```bash
-GLOBAL_DIR="$HOME/.gstack/projects/superhuman/state/_global"
+GLOBAL_DIR="$HOME/.superhuman/global"
 mkdir -p "$GLOBAL_DIR"
 TMP="$GLOBAL_DIR/repo-shortlist.json.tmp.$$"
 printf '%s' "$SHORTLIST" | jq . > "$TMP" && mv "$TMP" "$GLOBAL_DIR/repo-shortlist.json"

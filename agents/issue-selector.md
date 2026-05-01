@@ -37,7 +37,7 @@ See `SHARED_STATE.md` in this directory. You are the sole writer of
 ```bash
 OWNER_REPO="$REPO"
 SLUG="${OWNER_REPO/\//-}"
-STATE_DIR="$HOME/.gstack/projects/superhuman/state/$SLUG"
+STATE_DIR="$HOME/.superhuman/repos/$SLUG"
 mkdir -p "$STATE_DIR"
 ```
 

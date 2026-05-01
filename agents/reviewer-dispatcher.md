@@ -40,7 +40,7 @@ See `SHARED_STATE.md`. You READ: `current_contribution.json`,
 ```bash
 OWNER_REPO="$REPO"
 SLUG="${OWNER_REPO/\//-}"
-STATE_DIR="$HOME/.gstack/projects/superhuman/state/$SLUG"
+STATE_DIR="$HOME/.superhuman/repos/$SLUG"
 
 CURRENT="$STATE_DIR/current_contribution.json"
 PROFILE="$STATE_DIR/repo_profile.json"

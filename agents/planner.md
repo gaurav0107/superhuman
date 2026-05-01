@@ -42,7 +42,7 @@ Planner does not own any file. It produces a plan as its return value.
 ```bash
 OWNER_REPO="$REPO"
 SLUG="${OWNER_REPO/\//-}"
-STATE_DIR="$HOME/.gstack/projects/superhuman/state/$SLUG"
+STATE_DIR="$HOME/.superhuman/repos/$SLUG"
 
 PROFILE="$STATE_DIR/repo_profile.json"
 INTENT="$STATE_DIR/reviewer_intent_notes.md"

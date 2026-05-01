@@ -31,7 +31,7 @@ terminal state (merged, abandoned, suspicious_halt, crash).
 ```bash
 OWNER_REPO="$REPO"
 SLUG="${OWNER_REPO/\//-}"
-STATE_DIR="$HOME/.gstack/projects/superhuman/state/$SLUG"
+STATE_DIR="$HOME/.superhuman/repos/$SLUG"
 mkdir -p "$STATE_DIR"
 
 CURRENT="$STATE_DIR/current_contribution.json"
@@ -44,12 +44,45 @@ CURRENT="$STATE_DIR/current_contribution.json"
 If no `REPO` argument: dispatch `repo-finder`, then bind the top result:
 
 ```bash
-GLOBAL_DIR="$HOME/.gstack/projects/superhuman/state/_global"
+GLOBAL_DIR="$HOME/.superhuman/global"
 REPO=$(jq -r '.repos[0].repo' "$GLOBAL_DIR/repo-shortlist.json")
 [ -z "$REPO" ] || [ "$REPO" = "null" ] && { echo "repo-finder returned no candidates"; exit 1; }
 ```
 
 Eligibility check (keep inline; not a full agent):
+
+0. **Reputation gate.** Even when the caller supplied an explicit `REPO`,
+   honor the blocklist and cooldown files. Contributing to a repo the user
+   has blocked, or that the scorer has put on cooldown after repeated bad
+   outcomes, burns goodwill we cannot replace.
+
+   ```bash
+   GLOBAL_DIR="$HOME/.superhuman/global"
+   BLOCKLIST="$GLOBAL_DIR/repo_blocklist.json"
+   COOLDOWN="$GLOBAL_DIR/repo_cooldown.json"
+   NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+   if [ -f "$BLOCKLIST" ]; then
+     REASON=$(jq -r --arg r "$OWNER_REPO" --arg now "$NOW" \
+       '.blocked[] | select(.repo == $r)
+          | select(.expires_at == null or .expires_at > $now)
+          | .reason' "$BLOCKLIST" 2>/dev/null)
+     [ -n "$REASON" ] && {
+       echo "ABORT (blocklist): $OWNER_REPO — $REASON"; exit 1; }
+   fi
+
+   if [ -f "$COOLDOWN" ]; then
+     UNTIL=$(jq -r --arg r "$OWNER_REPO" \
+       '.cooldowns[] | select(.repo == $r) | .cooldown_until // empty' \
+       "$COOLDOWN" 2>/dev/null)
+     if [ -n "$UNTIL" ] && [ "$UNTIL" \> "$NOW" ]; then
+       echo "ABORT (cooldown until $UNTIL): $OWNER_REPO"
+       echo "To override, remove the entry from $COOLDOWN or add this repo"
+       echo "explicitly to an allowlist (out of scope for v2)."
+       exit 1
+     fi
+   fi
+   ```
 
 1. **AI-policy check.** `gh api "repos/$OWNER_REPO/contents/CONTRIBUTING.md"`
    (base64-decode). Grep for `AI-generated`, `LLM`, `no bots`, `Copilot
@@ -282,7 +315,7 @@ Set `$OUTCOME` from the exit path:
 
 Dispatch `merge-probability-scorer` one last time with `MODE=record_outcome`,
 passing `PR_URL`, `OUTCOME`, `ITERATION_COUNT`, `LAST_SCORE_ENTRY`. Scorer
-appends the JSONL line to `state/_global/merge_outcomes.jsonl`.
+appends the JSONL line to `global/merge_outcomes.jsonl`.
 
 Clear the lock:
 
@@ -323,7 +356,7 @@ Mistakes logged: 1 (builder:ci_gate — pytest failure fixed iter 2)
 ## Error handling
 
 - **AuthError from `gh`** → abort with `gh CLI not authenticated. Run 'gh auth login'.`
-- **DiskFullError on any state write** → abort with `Disk full writing shared state. Free space in ~/.gstack.`
+- **DiskFullError on any state write** → abort with `Disk full writing shared state. Free space in ~/.superhuman.`
 - **Uncaught exception** → write traceback to `mistakes.md` tag `orchestrator:crash`, clear lock, surface.
 - **Lock held by another agent** → refuse to start; tell user.
 - **Schema violation on any state file** → re-dispatch owner agent once; on second failure, abort.

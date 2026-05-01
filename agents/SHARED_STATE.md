@@ -8,7 +8,11 @@ schemas used by the v2 `opensource-contributor` agent team. All 6 new agents
 
 ## Directory layout
 
-Per-repo: `~/.gstack/projects/superhuman/state/<owner-repo>/`
+All plugin state lives under `~/.superhuman/`. No other directory is
+touched. The layout is flat: per-repo state under `repos/<slug>/`,
+cross-repo state under `global/`.
+
+Per-repo: `~/.superhuman/repos/<owner-repo>/`
 
 | File | Owner | Readers |
 |------|-------|---------|
@@ -21,15 +25,41 @@ Per-repo: `~/.gstack/projects/superhuman/state/<owner-repo>/`
 | `ci_commands.json` | repo-profiler | builder, reviewer-dispatcher |
 | `allowed_commands.json` | user-edited (seeded by repo-profiler) | builder |
 
-Repo-agnostic: `~/.gstack/projects/superhuman/state/_global/`
+Repo-agnostic: `~/.superhuman/global/`
 
 | File | Owner | Readers |
 |------|-------|---------|
 | `flake_signatures.md` | any agent (append only) | all |
-| `merge_outcomes.jsonl` | scorer feedback-loop hook (append only) | future `/tune-scorer-weights` (out of v2) |
+| `merge_outcomes.jsonl` | scorer feedback-loop hook (append only) | repo-finder, orchestrator, future `/tune-scorer-weights` |
+| `repo_blocklist.json` | user-edited (manual) | repo-finder, orchestrator Phase 0 |
+| `repo_cooldown.json` | scorer (derived from `merge_outcomes.jsonl`) | repo-finder, orchestrator Phase 0 |
+| `repo-shortlist.json` | repo-finder | orchestrator |
 
 `<owner-repo>` is formed as `<owner>-<repo>` (single hyphen; slash replaced).
 Example: `apache/airflow` → `apache-airflow`.
+
+### Migration from `~/.gstack/`
+
+Earlier builds wrote to `~/.gstack/projects/superhuman/state/`. Any agent
+that finds state at the old path on first run should copy it forward:
+
+```bash
+OLD="$HOME/.gstack/projects/superhuman/state"
+NEW="$HOME/.superhuman"
+if [ -d "$OLD" ] && [ ! -d "$NEW" ]; then
+  mkdir -p "$NEW/repos" "$NEW/global"
+  for d in "$OLD"/*/; do
+    base=$(basename "$d")
+    [ "$base" = "_global" ] && continue
+    cp -R "$d" "$NEW/repos/$base"
+  done
+  [ -d "$OLD/_global" ] && cp -R "$OLD/_global/." "$NEW/global/"
+  printf 'migrated %s -> %s (old path preserved)\n' "$OLD" "$NEW"
+fi
+```
+
+One-shot; no need to delete the old tree. After migration every agent
+reads/writes only `~/.superhuman/`.
 
 ## Concurrency contract
 
@@ -202,6 +232,60 @@ in `allowed_binaries` or whose pattern matches `denied_patterns`.
 }
 ```
 
+### `repo_blocklist.json` (user-edited, manual)
+
+Explicit "never contribute to this repo" list. Highest authority: overrides
+every other signal. Empty `reason` is allowed but discouraged. `expires_at`
+= `null` means permanent. Read by repo-finder and by the orchestrator's
+Phase 0 eligibility check.
+
+```jsonc
+{
+  "version": 1,
+  "blocked": [
+    {
+      "repo": "example-org/example-repo",
+      "reason": "maintainer declined prior PR; do not retry",
+      "added_at": "2026-05-02T00:00:00Z",
+      "expires_at": null
+    }
+  ]
+}
+```
+
+### `repo_cooldown.json` (scorer-derived, regenerated each run)
+
+Automatic cooldown gate. The scorer regenerates this file when it records
+an outcome, scanning the last 180 days of `merge_outcomes.jsonl`. Rules:
+
+- ≥2 of `{closed_no_merge, abandoned, suspicious_halt}` in 180 days with
+  0 `merged` in the same window → cooldown for 90 days from the most
+  recent negative outcome.
+- Any `suspicious_halt` in the last 180 days → cooldown for 180 days from
+  that outcome (higher bar to return; prompt-injection attempts are a
+  serious signal).
+- Any `merged` in the last 180 days → counter resets; no cooldown applies
+  regardless of negative outcomes.
+
+The cooldown is auto-expiring: once `cooldown_until` passes, the repo
+becomes eligible again on the next regeneration.
+
+```jsonc
+{
+  "version": 1,
+  "generated_at": "2026-05-02T00:00:00Z",
+  "cooldowns": [
+    {
+      "repo": "example-org/example-repo",
+      "negative_outcomes_180d": 2,
+      "last_merged_at": null,
+      "cooldown_until": "2026-08-02T00:00:00Z",
+      "triggering_outcomes": ["closed_no_merge", "abandoned"]
+    }
+  ]
+}
+```
+
 ### `merge_outcomes.jsonl` (cross-repo, append-only)
 
 One JSON object per line:
@@ -266,7 +350,8 @@ T+5m20s orchestrator:   gh pr ready (when final >= 80)
             until final >= 95 on two consecutive runs, or terminate condition ===
 
 T+N     orchestrator:   Phase 8 terminal. Dispatch scorer MODE=record_outcome.
-                        scorer appends merge_outcomes.jsonl (_global/, cross-repo).
+                        scorer appends merge_outcomes.jsonl (global/, cross-repo)
+                        and regenerates repo_cooldown.json from the last 180d window.
                         orchestrator clears lock_holder, trap releases flock fd.
 ```
 
@@ -282,7 +367,12 @@ Each agent that reads/writes shared state should use these patterns:
 state_dir() {
   local owner_repo="$1"              # e.g. "apache/airflow"
   local slug="${owner_repo/\//-}"    # "apache-airflow"
-  echo "$HOME/.gstack/projects/superhuman/state/$slug"
+  echo "$HOME/.superhuman/repos/$slug"
+}
+
+# Resolve the repo-agnostic global dir
+global_dir() {
+  echo "$HOME/.superhuman/global"
 }
 
 # Atomic JSON write
@@ -321,6 +411,6 @@ require_lock() {
 - `AuthError` from `gh` CLI → abort: `gh CLI not authenticated. Run 'gh auth
   login' and retry.`
 - `DiskFullError` writing to state → abort: `Disk full writing shared state.
-  Free space in ~/.gstack or set GSTACK_HOME to a disk with room.`
+  Free space in ~/.superhuman or move the directory to a disk with room.`
 - Other uncaught exception → write traceback to `mistakes.md` under tag
   `orchestrator:crash`, release `current_contribution.json` lock, surface.

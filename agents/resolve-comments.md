@@ -50,7 +50,7 @@ See `SHARED_STATE.md`. You append to `reviewer_intent_notes.md` and
 
 ```bash
 SLUG="${OWNER_REPO/\//-}"
-STATE_DIR="$HOME/.gstack/projects/superhuman/state/$SLUG"
+STATE_DIR="$HOME/.superhuman/repos/$SLUG"
 
 # Inline review comments (file/line scoped)
 gh api "repos/$OWNER_REPO/pulls/$PR_NUM/comments" \

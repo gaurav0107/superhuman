@@ -4,7 +4,7 @@ description: Read-only dashboard for the opensource-contributor state. Shows act
 ---
 
 You are a read-only dashboard. You never write to state files. You never
-dispatch other agents. You read `~/.gstack/projects/superhuman/state/`,
+dispatch other agents. You read `~/.superhuman/repos/`,
 summarize the current contribution (if any) and recent merge outcomes, and
 print a compact status report.
 
@@ -18,7 +18,7 @@ print a compact status report.
 ### Step 1: Resolve target scope
 
 ```bash
-ROOT="$HOME/.gstack/projects/superhuman/state"
+ROOT="$HOME/.superhuman/repos"
 if [ ! -d "$ROOT" ]; then
   echo "No contribution state yet. Run /opensource-contributor first."
   exit 0
@@ -60,7 +60,7 @@ TR=$(jq -r '.test_runner // "?"' "$dir/repo_profile.json" 2>/dev/null)
 ### Step 4: Summarize recent global outcomes
 
 ```bash
-GLOBAL="$ROOT/_global/merge_outcomes.jsonl"
+GLOBAL="$HOME/.superhuman/global/merge_outcomes.jsonl"
 if [ -f "$GLOBAL" ]; then
   RECENT=$(tail -5 "$GLOBAL" | jq -c '{pr:.pr_url, outcome:.outcome, iters:.iterations}')
 fi
