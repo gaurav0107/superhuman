@@ -47,6 +47,34 @@ exit in the most recent builder run (compare timestamps against
 at all for any `local_runnable` command — i.e. the builder hasn't run
 once yet. In normal iteration (builder ran, CI passed), no cap applies.
 
+**Flake exemption.** Before applying the CI-health cap, grep each failing
+log tail against patterns in `state/_global/flake_signatures.md`. If EVERY
+failing command matches a known flake signature, the cap is NOT applied
+and `caps_applied[]` gets `"ci_health_flake_skipped"`; the score entry's
+`notes` field lists which signatures matched. Rationale: capping for a
+known pip mirror timeout punishes the contributor for noise the maintainer
+already dismisses.
+
+```bash
+FLAKES="$GLOBAL_DIR/flake_signatures.md"
+is_flake_log() {
+  local log="$1"
+  [ -f "$FLAKES" ] || return 1
+  local tail; tail=$(tail -100 "$log" 2>/dev/null)
+  [ -z "$tail" ] && return 1
+  while IFS= read -r line; do
+    local rx
+    rx=$(printf '%s' "$line" | sed -nE 's/.*pattern:[[:space:]]*`([^`]+)`.*/\1/p')
+    [ -n "$rx" ] && echo "$tail" | grep -qE "$rx" && return 0
+  done < <(grep '^- pattern:' "$FLAKES")
+  return 1
+}
+```
+
+Only skip the cap if ALL failing commands match (one real failure still
+caps). Single-failure-matches-flake is still a flaky signal but not
+enough to overrule the cap.
+
 ## Inputs
 
 The contributor passes these when invoking you:
@@ -198,10 +226,19 @@ raw_score = (
 
 # Blocking caps (applied in order, lower cap wins)
 final_score = raw_score
+caps_applied = []
 if process_compliance <= 4:
     final_score = min(final_score, 50)
-if ci_failing:  # any required local_runnable failed on last run
-    final_score = min(final_score, 40)
+    caps_applied.append("process")
+if ci_failing:
+    # Classify every failing log against flake_signatures.md.
+    # If ALL failing commands matched a known flake, skip the cap.
+    if all(is_flake_log(log) for log in failing_logs):
+        caps_applied.append("ci_health_flake_skipped")
+        # record which signatures matched in notes
+    else:
+        final_score = min(final_score, 40)
+        caps_applied.append("ci_health")
 ```
 
 ### Step 5: Generate Feedback
@@ -327,6 +364,11 @@ tuning — never rewrite it, never prune it.
 - **Reference the repo's own standards** — don't impose external conventions. Read `repo_profile.json` and compare against its `commit_convention`, `pr_body_sections`, `closes_syntax`, `test_runner`. Don't demand conventional commits if the repo uses freeform.
 - **Score 0 on correctness if the fix is wrong** — nothing else matters if the code doesn't work
 - **Read the issue first** — you can't score correctness without knowing what "correct" means
-- **Apply CI-health cap honestly.** A red CI gate caps the score at 40%. Don't rationalize around it — fix the CI failure instead.
+- **Apply CI-health cap honestly.** A red CI gate caps the score at 40%.
+  The only exception is when every failing command matches a known flake
+  signature in `_global/flake_signatures.md`; then emit
+  `ci_health_flake_skipped` in `caps_applied[]` and record the matched
+  patterns in `notes`. A single real failure still caps. Don't hand-wave
+  around real failures — fix them instead.
 - **Atomic writes to shared state.** `current_contribution.json` uses temp+rename. `merge_outcomes.jsonl` uses append-only `printf >>`.
 - **Outcome recording is append-only.** Never edit past entries in `merge_outcomes.jsonl`; they are the feedback corpus.

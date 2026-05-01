@@ -62,6 +62,82 @@ Eligibility check (keep inline; not a full agent):
    `/Users/mia/myspace/opensource-work/<repo>`. Set `upstream` remote to
    the source repo. `origin` is always the fork.
 
+### Phase 0.5: Housekeeping (per-session, idempotent)
+
+Runs once at session start, before claiming the lock. Keeps state files
+bounded so they don't drift into GC-worthy piles.
+
+#### Prune `mistakes.md` entries older than 90 days
+
+`SHARED_STATE.md` declares that the orchestrator prunes this file — add the
+implementation. Each mistake section starts with `## <ISO8601> — <tag>`;
+keep only sections whose header is within the last 90 days.
+
+```bash
+MISTAKES="$STATE_DIR/mistakes.md"
+if [ -f "$MISTAKES" ]; then
+  CUTOFF=$(date -u -v-90d +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+           || date -u -d '90 days ago' +%Y-%m-%dT%H:%M:%SZ)
+  # Split into sections keyed by `^## ` headers; keep sections whose first
+  # line's ISO timestamp >= CUTOFF. Preserves ordering.
+  TMP="$MISTAKES.tmp.$$"
+  awk -v cutoff="$CUTOFF" '
+    /^## [0-9]{4}-[0-9]{2}-[0-9]{2}T/ {
+      # Extract ISO timestamp at position $2
+      ts = $2
+      keep = (ts >= cutoff)
+      if (keep) print
+      next
+    }
+    /^## / { keep = 0; print; next }   # non-dated header: keep (rare)
+    { if (keep || NR==1) print }
+  ' "$MISTAKES" > "$TMP" && mv "$TMP" "$MISTAKES"
+fi
+```
+
+#### Initialize `run_telemetry.jsonl` pointer
+
+```bash
+TELEMETRY="$STATE_DIR/run_telemetry.jsonl"
+touch "$TELEMETRY"
+```
+
+Helper for per-phase timing. Every `dispatch_phase` call wraps a specialist
+invocation so the dashboard can show where time went:
+
+```bash
+emit_telemetry() {
+  local phase="$1" duration_s="$2" outcome="$3" extra="${4:-}"
+  local line
+  line=$(jq -c -n \
+    --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    --argjson iter "${ITERATION:-0}" \
+    --arg phase "$phase" \
+    --argjson d "$duration_s" \
+    --arg o "$outcome" \
+    --arg x "$extra" \
+    '{ts:$ts, iteration:$iter, phase:$phase, duration_s:$d, outcome:$o}
+     + (if $x == "" then {} else {extra:$x} end)')
+  printf '%s\n' "$line" >> "$TELEMETRY"
+}
+
+run_phase() {
+  # run_phase <phase_name> <command...>
+  local phase="$1"; shift
+  local start=$(date +%s)
+  "$@"
+  local rc=$?
+  local end=$(date +%s)
+  emit_telemetry "$phase" "$((end - start))" \
+    "$([ $rc -eq 0 ] && echo ok || echo fail)"
+  return $rc
+}
+```
+
+Every subsequent `Dispatch X` call in phases 2-8 should be wrapped:
+`run_phase "<phase-label>" dispatch_agent <args...>`. Allowed labels match
+the enum in `SHARED_STATE.md` → `run_telemetry.jsonl` schema.
+
 ### Phase 1: Claim the contribution lock
 
 ```bash
@@ -143,10 +219,25 @@ jq --argjson n "$ISSUE_NUMBER" --arg b "$BRANCH" \
 
 ### Phase 4: Plan
 
-Dispatch `planner` with `REPO`, `ISSUE_NUMBER`, `WORKDIR`. Capture the
-returned Markdown plan into a local variable `PLAN`.
+Dispatch `planner` with `REPO`, `ISSUE_NUMBER`, `WORKDIR`. Planner writes
+`plan.md` atomically to `$STATE_DIR/plan.md` and also returns the Markdown
+plan for immediate use.
 
-Extract `Target symbol` from the plan (used by builder for impact-audit).
+Read the plan from disk (trust disk over memory so retries across phase
+boundaries stay consistent):
+
+```bash
+PLAN_FILE="$STATE_DIR/plan.md"
+if [ ! -f "$PLAN_FILE" ]; then
+  echo "ERROR: planner did not persist plan.md" >&2
+  exit 1
+fi
+PLAN=$(cat "$PLAN_FILE")
+TARGET_SYMBOL=$(awk '/^## Target symbol/{flag=1; next} flag && NF {print; exit}' \
+  "$PLAN_FILE" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')
+```
+
+`TARGET_SYMBOL` is passed to builder for the impact-audit step.
 
 ### Phase 5: Initial build
 
@@ -344,3 +435,13 @@ Inherit `state_dir`, `atomic_write_json`, `require_lock` from `SHARED_STATE.md`.
   `IMPACT_AUDIT_BLOCKED` require a human decision. Do not auto-retry.
 - **Fork-only push target.** `origin` is always the fork. `upstream` is
   the source repo. Builder never pushes to upstream.
+- **Prune `mistakes.md` on session start.** Phase 0.5 runs awk-based
+  pruning to keep entries within 90 days. The file was growing unbounded
+  before; old mistakes poison the planner's "known mistakes" prompt.
+- **Emit telemetry for every phase.** `run_phase` wraps each specialist
+  invocation and appends a line to `run_telemetry.jsonl`. The
+  `/contribution-dashboard` command reads this to show where time is
+  going.
+- **Read `plan.md` from disk, not memory.** Phase 4 loads the plan from
+  `$STATE_DIR/plan.md`. A retry across phase boundaries would otherwise
+  lose the plan to shell scope.

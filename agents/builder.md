@@ -42,6 +42,34 @@ and any `FINDINGS_JSON` provided.
 
 ## Workflow
 
+### Step 0: Fact-forcing preamble
+
+Before any edit, state the following facts out loud in the build log so the
+orchestrator captures them in `run_telemetry.jsonl` and downstream agents
+can audit them. An edit that skips this preamble is rejected by the
+orchestrator's builder-invocation wrapper.
+
+1. **Plan source.** Confirm `plan.md` exists at `$STATE_DIR/plan.md` and
+   print its `## Target symbol` line. If the shell-passed `PLAN` variable
+   disagrees with `plan.md`, trust disk over memory.
+2. **Callers of the target symbol.** Print the count from
+   `caller_graph.json` if it exists, or state "impact-audit pending" if
+   the Step 2 audit has not yet run for this symbol.
+3. **Public API impact.** For each file in the plan's "Files to edit",
+   grep for `^def [a-z]\|^class [A-Z]\|^export ` (or the language's public-
+   symbol marker) and note which public symbols are in the edit range.
+4. **Schema / generated-file impact.** Check each edit-target path against
+   `$STATE_DIR/generated_files.json`. If any path appears there, STOP and
+   emit `GENERATED_FILE_BLOCKED: <path>` — do not hand-edit generated
+   files; run the recorded `regenerate_cmd` instead (see Step 1.5).
+5. **Reviewer intent already captured.** Print the last 3 entries from
+   `reviewer_intent_notes.md` (titles only) so the builder cannot contradict
+   recent maintainer clarifications.
+
+This preamble costs one file read per fact and prevents whole classes of
+silent failures documented in the airflow #65685 post-mortem (plan drift,
+generated-file clobber, caller-graph gap).
+
 ### Step 1: Resolve state dir, branch check
 
 ```bash
@@ -62,6 +90,45 @@ else
     || git checkout -b "$BRANCH" "origin/$DEFAULT_BRANCH"
 fi
 ```
+
+### Step 1.5: Generated-file guard
+
+Load `generated_files.json` once per build. For every file the plan asks to
+edit, check whether its path is present in `entries`.
+
+```bash
+GEN="$STATE_DIR/generated_files.json"
+if [ -f "$GEN" ]; then
+  for f in $PLAN_EDIT_FILES; do
+    MATCH=$(jq --arg p "$f" '.entries[] | select(.path == $p)' "$GEN")
+    if [ -n "$MATCH" ]; then
+      RC=$(jq -r '.regenerate_cmd // "null"' <<<"$MATCH")
+      MARKER=$(jq -r .marker <<<"$MATCH")
+      if [ "$RC" = "null" ]; then
+        cat >> "$STATE_DIR/mistakes.md" <<EOF
+
+## $(date -u +%Y-%m-%dT%H:%M:%SZ) — builder:generated_file_blocked
+- **File**: $f
+- **Marker**: $MARKER
+- **Rule**: hand-editing a generated file gets clobbered on next regen
+- **Action**: find the source template or upstream config instead
+EOF
+        echo "GENERATED_FILE_BLOCKED: $f ($MARKER)"
+        return 1
+      else
+        echo "Regenerating $f via: $RC"
+        bash -c "cd '$WORKDIR' && $RC"
+        # Stage whatever the generator produced; builder applies content
+        # changes to source templates, never to the generated output.
+        git -C "$WORKDIR" add "$f"
+      fi
+    fi
+  done
+fi
+```
+
+Reviewers close PRs that hand-edit generated files; this guard is the
+hard-block version of the post-mortem's "prefer the generator" rule.
 
 ### Step 2: Impact audit (BEFORE any refactor that changes a shared function)
 
@@ -208,8 +275,15 @@ jq -c '.local_runnable[]' "$CI" | while read -r entry; do
   RC=${PIPESTATUS[0]}
   if [ "$RC" -ne 0 ]; then
     echo "FAIL: $NAME exit=$RC"
-    record_mistake "ci_gate" "$NAME" "$RC" "$CMD"
-    return 1
+    if classify_as_flake "/tmp/${NAME}.log"; then
+      echo "  (matched known flake signature — recording as flake, not mistake)"
+      record_flake_hit "$NAME" "$CMD" "/tmp/${NAME}.log"
+      # Flake: do not block push, but annotate the run for the scorer
+      export BUILDER_LAST_CI_FLAKE="true"
+    else
+      record_mistake "ci_gate" "$NAME" "$RC" "$CMD"
+      return 1
+    fi
   fi
 done
 ```
@@ -232,22 +306,125 @@ $tail_log
 - **Rule**: do not push without passing '$name' locally
 EOF
 }
+
+# Classify a CI failure log against known flake signatures. Returns 0
+# (success, is flake) if any pattern matches the last 100 lines of the log.
+classify_as_flake() {
+  local logfile="$1"
+  local flakes="$HOME/.gstack/projects/superhuman/state/_global/flake_signatures.md"
+  [ -f "$flakes" ] || return 1
+  # Extract `pattern:` lines from the flake signatures markdown. Each is a
+  # regex wrapped in backticks. Grep log tail for any match.
+  local tail
+  tail=$(tail -100 "$logfile" 2>/dev/null)
+  [ -z "$tail" ] && return 1
+  while IFS= read -r line; do
+    # pattern lines look like: - pattern: `regex here`
+    local rx
+    rx=$(printf '%s' "$line" | sed -nE 's/.*pattern:[[:space:]]*`([^`]+)`.*/\1/p')
+    [ -z "$rx" ] && continue
+    if echo "$tail" | grep -qE "$rx"; then
+      return 0
+    fi
+  done < <(grep '^- pattern:' "$flakes")
+  return 1
+}
+
+# Record a flake hit in the global catalog so we learn which flakes recur.
+record_flake_hit() {
+  local name="$1" cmd="$2" logfile="$3"
+  local flakes="$HOME/.gstack/projects/superhuman/state/_global/flake_signatures.md"
+  local repo="$OWNER_REPO"
+  cat >> "$flakes" <<EOF
+
+## hit: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+- repo: $repo
+- command: $cmd
+- log-tail: $(tail -3 "$logfile" 2>/dev/null | tr '\n' ' ' | cut -c1-200)
+EOF
+}
 ```
 
 ### Step 5: Review-drift linter (pre-push)
 
-Run a quick self-check before push:
+Three concrete grep-based checks. Each prints `PASS` / `WARN` / `FAIL` and
+records WARN+FAIL to `mistakes.md` with tag `builder:review-drift`. None
+block push — they are fixups for the next iteration.
 
-- Newsfragment / changelog filename matches `$ISSUE_NUMBER` if one exists.
-- PR description (from last commit message body) does not mention removed
-  symbols. Grep the diff for removed identifiers; grep the commit body for
-  any of them; flag if found.
-- Base-layer files (anything under `src/` that is not inside a provider
-  directory) do not mention provider-specific names. Detect provider names
-  by listing `providers/<name>/` directories.
+#### 5a: Newsfragment filename matches issue
 
-Failures are recorded in `mistakes.md` with tag `builder:review-drift` but
-do NOT block push — they are fixups for the next iteration.
+If the repo ships newsfragments (Airflow, Twisted, many pip-ecosystem repos),
+the filename must start with the issue number.
+
+```bash
+NEWS_DIRS=$(git -C "$WORKDIR" diff --name-only "$DEFAULT_BRANCH"...HEAD \
+  | grep -E '(newsfragments|changes|changelog\.d)/' || true)
+if [ -n "$NEWS_DIRS" ]; then
+  for nf in $NEWS_DIRS; do
+    base=$(basename "$nf")
+    # Expect filenames like 65685.bugfix.rst or 65685-description.md
+    if ! echo "$base" | grep -qE "^${ISSUE_NUMBER}[.-]"; then
+      echo "WARN review-drift: newsfragment $nf does not start with #$ISSUE_NUMBER"
+      record_mistake "review-drift" "newsfragment-issue-mismatch" 0 \
+        "newsfragment $nf should start with $ISSUE_NUMBER"
+    fi
+  done
+fi
+```
+
+#### 5b: Removed-symbol echo in commit body
+
+If a symbol was deleted in the diff, the commit message must not still
+reference it (common drift pattern: code changed, message stale).
+
+```bash
+# Identifiers removed (starts with `-` in diff, then `def `/`class `/`function `)
+REMOVED=$(git -C "$WORKDIR" diff "$DEFAULT_BRANCH"...HEAD \
+  | grep -E '^-\s*(def|class|function|fn) [A-Za-z_][A-Za-z0-9_]*' \
+  | sed -E 's/^-\s*(def|class|function|fn) ([A-Za-z_][A-Za-z0-9_]*).*/\2/' \
+  | sort -u)
+
+COMMIT_BODY=$(git -C "$WORKDIR" log -1 --format=%B)
+for sym in $REMOVED; do
+  if echo "$COMMIT_BODY" | grep -qw "$sym"; then
+    echo "WARN review-drift: removed symbol '$sym' still referenced in commit body"
+    record_mistake "review-drift" "removed-symbol-in-commit" 0 \
+      "removed symbol $sym still named in commit message; reword or keep the symbol"
+  fi
+done
+```
+
+#### 5c: Base-layer files don't name provider-scoped identifiers
+
+If the repo uses the `providers/<name>/` split (Airflow, Docker CLI), files
+outside `providers/` must not mention provider names that leaked across the
+boundary — a common reviewer objection.
+
+```bash
+# Detect provider names from the tree
+PROVIDERS=$(find "$WORKDIR/providers" -mindepth 1 -maxdepth 1 -type d \
+  -printf '%f\n' 2>/dev/null | head -50)
+
+# Files edited outside providers/
+CORE_EDITS=$(git -C "$WORKDIR" diff --name-only "$DEFAULT_BRANCH"...HEAD \
+  | grep -v '^providers/' || true)
+
+for cf in $CORE_EDITS; do
+  for prov in $PROVIDERS; do
+    # Case-insensitive whole-word match to catch FAB/fab/Fab consistently
+    if git -C "$WORKDIR" diff "$DEFAULT_BRANCH"...HEAD -- "$cf" \
+         | grep -qiE "(^|[^A-Za-z0-9_])$prov([^A-Za-z0-9_]|\$)"; then
+      echo "WARN review-drift: core file $cf mentions provider '$prov'"
+      record_mistake "review-drift" "provider-leak-into-core" 0 \
+        "$cf references provider '$prov' — keep provider names out of core"
+      break
+    fi
+  done
+done
+```
+
+The check uses the existing `record_mistake` helper with rc=0 so the entry
+is written but the build continues.
 
 ### Step 6: Push with `--force-with-lease`
 
@@ -283,6 +460,13 @@ Pushed: fix/65685-auth-role-public (force-with-lease)
 - **Never run unallowlisted commands.** Builder re-verifies `allowed_binaries`
   and `denied_patterns` at runtime even if repo-profiler already classified
   them (defense in depth).
+- **Never hand-edit generated files.** Step 1.5 checks every plan-edit path
+  against `generated_files.json`. If the path has a `regenerate_cmd`, run it;
+  if not, return `GENERATED_FILE_BLOCKED` and record a mistake.
+- **Classify flakes before recording mistakes.** When a CI command fails,
+  grep the log tail against `flake_signatures.md` patterns. Matches are
+  recorded as flake hits (global, append-only) and do not count as builder
+  failures — they're noise, not regressions.
 - **Never push without local CI passing.** If any `local_runnable` command
   fails, record a mistake and exit. The orchestrator will decide whether to
   retry or abort.
