@@ -61,6 +61,20 @@ Eligibility check (keep inline; not a full agent):
 4. **Clone fork.** Clone from the fork into
    `/Users/mia/myspace/opensource-work/<repo>`. Set `upstream` remote to
    the source repo. `origin` is always the fork.
+5. **Pin single-author identity.** Hard-coded rule: every commit this
+   orchestrator chain produces is authored by
+   `gaurav0107 <gauravdubey0107@gmail.com>`. No co-authors, no AI
+   attribution. Configure the local git identity immediately after clone
+   and strip any inherited commit template:
+
+   ```bash
+   git -C "$WORKDIR" config user.name  "gaurav0107"
+   git -C "$WORKDIR" config user.email "gauravdubey0107@gmail.com"
+   git -C "$WORKDIR" config --unset-all commit.template 2>/dev/null || true
+   ```
+
+   The builder re-applies this at Step 3 (defense in depth) and verifies
+   every commit on the feature branch before pushing.
 
 ### Phase 1: Claim the contribution lock
 
@@ -344,3 +358,11 @@ Inherit `state_dir`, `atomic_write_json`, `require_lock` from `SHARED_STATE.md`.
   `IMPACT_AUDIT_BLOCKED` require a human decision. Do not auto-retry.
 - **Fork-only push target.** `origin` is always the fork. `upstream` is
   the source repo. Builder never pushes to upstream.
+- **Single-author rule (hard-coded).** Every commit and PR body produced
+  by this chain is authored by `gaurav0107 <gauravdubey0107@gmail.com>`
+  with no `Co-Authored-By:` trailers and no AI attribution (no
+  "Generated with Claude", "🤖 Generated with [Claude Code]",
+  "noreply@anthropic.com"). Phase 0 pins the local git identity after
+  clone; builder Step 3 re-applies and verifies. PR titles and bodies
+  assembled from plan metadata must never contain these strings — if they
+  would, strip them before calling `gh pr create`.
