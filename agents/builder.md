@@ -107,6 +107,36 @@ hard-block version of the post-mortem's "prefer the generator" rule.
 Trigger: the plan's "Target symbol" field names a function, OR the current
 `FINDINGS_JSON` contains a finding with `kind=refactor_function`.
 
+**Dispatch the `impact-auditor` specialist** — do not inline the audit.
+The auditor writes `$STATE_DIR/impact_audit.json` with the full caller
+graph, classifications, and a verdict.
+
+```
+Dispatch(impact-auditor) with:
+  REPO, WORKDIR, TARGET, REFACTOR_KIND, REFACTOR_DESCRIPTION
+```
+
+Read the verdict:
+
+```bash
+VERDICT=$(jq -r '.verdict' "$STATE_DIR/impact_audit.json")
+
+case "$VERDICT" in
+  allow) : ;;                                   # proceed to Step 3
+  warn)  echo "IMPACT_AUDIT_WARN: smoke tests required before push" ;;
+  block) SUGGESTED=$(jq -r '.suggested_alternative' "$STATE_DIR/impact_audit.json")
+         cat <<EOF
+IMPACT_AUDIT_BLOCKED: refactor unsafe in one or more caller contexts
+See: $STATE_DIR/impact_audit.json
+Suggested alternative: $SUGGESTED
+EOF
+         exit 1 ;;
+esac
+```
+
+The inline reference matrix below is kept only as documentation of the
+verdicts the auditor applies — the auditor is the authoritative source.
+
 ```bash
 TARGET="<fully qualified symbol from plan or finding>"
 SHORT_NAME="${TARGET##*.}"
