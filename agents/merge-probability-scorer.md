@@ -21,15 +21,16 @@ Each dimension is scored 0-10, then weighted to produce the final percentage.
 
 | Dimension | Weight | What you evaluate |
 |-----------|--------|-------------------|
-| **Correctness** | 25% | Does the code actually fix the issue? Edge cases handled? |
-| **Test coverage** | 20% | New tests added? Existing tests still pass? Coverage adequate? |
-| **Style compliance** | 10% | Matches repo's linting, naming, formatting conventions? |
-| **PR format compliance** | 10% | Commit messages, branch naming, PR description template, required sections? |
-| **Process compliance** | 10% | Issue linked & assigned to contributor? CLA/DCO signed? Maintainer pre-approval obtained? No competing/duplicate PRs? Contributor has required repo access? |
-| **Scope discipline** | 10% | Only changes what's needed? No drive-by refactors or unrelated fixes? |
+| **Correctness** | 22% | Does the code actually fix the issue? Edge cases handled? |
+| **Test coverage** | 18% | New tests added? Existing tests still pass? Coverage adequate? |
+| **Historical signal** | 10% | Calibrated P(merge) from `merge_outcomes.jsonl` — per-repo and per-score-band merge rate, blended with rubric score when the corpus is thin. See **Step 3a** below. |
+| **Style compliance** | 9% | Matches repo's linting, naming, formatting conventions? |
+| **PR format compliance** | 9% | Commit messages, branch naming, PR description template, required sections? |
+| **Process compliance** | 9% | Issue linked & assigned to contributor? CLA/DCO signed? Maintainer pre-approval obtained? No competing/duplicate PRs? Contributor has required repo access? |
+| **Scope discipline** | 9% | Only changes what's needed? No drive-by refactors or unrelated fixes? |
 | **Documentation** | 5% | Code comments where needed? README/docs updated if behavior changes? |
 | **Commit hygiene** | 5% | Clean history? Conventional commits? Issue referenced? |
-| **Risk assessment** | 5% | Breaking changes? Backward compatibility? Migration needed? |
+| **Risk assessment** | 4% | Breaking changes? Backward compatibility? Migration needed? |
 
 **Final score** = weighted sum, scaled to 0-100%.
 
@@ -208,19 +209,111 @@ For each dimension, perform specific checks:
 - Dependency additions or version bumps?
 - Score 10 if zero-risk, score 2 if breaking changes without migration path
 
+### Step 3a: Historical signal — calibrate against past outcomes
+
+The rubric tells you what *should* merge. The corpus tells you what *actually does*.
+Read `state/_global/merge_outcomes.jsonl` and compute `historical_signal`
+(0-10). Blend per-repo base rate with rubric score, then shrink toward the
+rubric when the corpus is thin.
+
+```bash
+OUTCOMES="$GLOBAL_DIR/merge_outcomes.jsonl"
+# Fallback: if corpus missing or empty, skip signal (score = rubric anchor)
+if [ ! -s "$OUTCOMES" ]; then
+  HIST_SIGNAL=$(printf '%.0f' "$RUBRIC_BEFORE_HIST")   # 0-10 rubric anchor
+else
+  # Per-repo merge rate in the last 180 days (runs with a PR opened)
+  REPO_STATS=$(jq -s --arg repo "$OWNER_REPO" '
+    map(select(.repo == $repo
+               and (.outcome == "merged"
+                    or .outcome == "closed_no_merge"
+                    or .outcome == "abandoned")))
+    | {
+        n: length,
+        merged: map(select(.outcome == "merged")) | length
+      }
+  ' "$OUTCOMES")
+  N=$(echo "$REPO_STATS"   | jq -r '.n')
+  M=$(echo "$REPO_STATS"   | jq -r '.merged')
+
+  # Global base rate as the prior
+  GLOBAL_RATE=$(jq -s '
+    map(select(.outcome == "merged" or .outcome == "closed_no_merge"
+               or .outcome == "abandoned")) as $c
+    | if ($c | length) == 0 then 0.5
+      else (($c | map(select(.outcome == "merged")) | length) / ($c | length))
+      end
+  ' "$OUTCOMES")
+
+  # Shrinkage: Laplace-ish smoothing with prior weight k=4 runs
+  # merge_rate_est = (M + k*GLOBAL_RATE) / (N + k)
+  MERGE_EST=$(python3 -c "print(($M + 4*$GLOBAL_RATE) / ($N + 4))")
+
+  # Rubric anchor: convert running rubric score (without historical) to 0-1
+  RUBRIC_01=$(python3 -c "print($RUBRIC_BEFORE_HIST / 10.0)")
+
+  # Blend weight scales with sample size: w = N / (N + 4)
+  W=$(python3 -c "print($N / ($N + 4))")
+  BLENDED=$(python3 -c "print(round(10 * ((1-$W)*$RUBRIC_01 + $W*$MERGE_EST), 2)")
+  HIST_SIGNAL="$BLENDED"
+fi
+```
+
+Record in `scores[-1].notes.historical_signal`:
+
+```json
+{
+  "historical_signal": {
+    "repo_runs_180d": 3,
+    "repo_merged_180d": 2,
+    "global_base_rate": 0.19,
+    "shrinkage_k": 4,
+    "blended_merge_p": 0.58
+  }
+}
+```
+
+Calibration anchors:
+
+| State of the corpus | Expected behavior |
+|---|---|
+| 0 outcomes for this repo | `historical_signal` ≈ rubric anchor (no information to add) |
+| 1-2 runs, all negative | pulls slightly toward global base rate; don't panic the score |
+| 5+ runs, 3+ merged | overrides a middling rubric — this repo clearly accepts our PRs |
+| 5+ runs, 0 merged, many abandoned | drags the score down even if rubric looks strong |
+
+Do NOT let `historical_signal` exceed `rubric_anchor + 3` or fall below
+`rubric_anchor - 3`. The corpus can steer but not stampede.
+
 ### Step 4: Calculate Score
 
 ```
-raw_score = (
-  correctness * 0.25 +
-  test_coverage * 0.20 +
-  style_compliance * 0.10 +
-  pr_format_compliance * 0.10 +
-  process_compliance * 0.10 +
-  scope_discipline * 0.10 +
+rubric_before_hist = (
+  correctness * 0.22 +
+  test_coverage * 0.18 +
+  style_compliance * 0.09 +
+  pr_format_compliance * 0.09 +
+  process_compliance * 0.09 +
+  scope_discipline * 0.09 +
   documentation * 0.05 +
   commit_hygiene * 0.05 +
-  risk_assessment * 0.05
+  risk_assessment * 0.04
+) * 10 / 0.90        # normalize the 90% that isn't historical
+
+# Now compute historical_signal using rubric_before_hist (see Step 3a)
+# then fold it into the final:
+
+raw_score = (
+  correctness * 0.22 +
+  test_coverage * 0.18 +
+  historical_signal * 0.10 +
+  style_compliance * 0.09 +
+  pr_format_compliance * 0.09 +
+  process_compliance * 0.09 +
+  scope_discipline * 0.09 +
+  documentation * 0.05 +
+  commit_hygiene * 0.05 +
+  risk_assessment * 0.04
 ) * 10
 
 # Blocking caps (applied in order, lower cap wins)
@@ -256,15 +349,16 @@ For every dimension scoring below 8, provide:
 
 | Dimension | Score | Weight | Weighted |
 |-----------|-------|--------|----------|
-| Correctness | N/10 | 25% | N.N |
-| Test coverage | N/10 | 20% | N.N |
-| Style compliance | N/10 | 10% | N.N |
-| PR format compliance | N/10 | 10% | N.N |
-| Process compliance | N/10 | 10% | N.N |
-| Scope discipline | N/10 | 10% | N.N |
+| Correctness | N/10 | 22% | N.N |
+| Test coverage | N/10 | 18% | N.N |
+| Historical signal | N/10 | 10% | N.N |
+| Style compliance | N/10 | 9% | N.N |
+| PR format compliance | N/10 | 9% | N.N |
+| Process compliance | N/10 | 9% | N.N |
+| Scope discipline | N/10 | 9% | N.N |
 | Documentation | N/10 | 5% | N.N |
 | Commit hygiene | N/10 | 5% | N.N |
-| Risk assessment | N/10 | 5% | N.N |
+| Risk assessment | N/10 | 4% | N.N |
 | **Raw Total** | | | **XX%** |
 | **Blocking cap applied?** | | | Yes/No |
 | **Final Score** | | | **XX%** |
