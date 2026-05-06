@@ -241,6 +241,133 @@ cannot be hand-edited — if `regenerate_cmd` is non-null, the builder runs
 that command and diffs the result; if null, the builder aborts the edit and
 records `builder:generated_file_blocked`.
 
+### Step 5.6: Detect smoke layers
+
+Write a registry of cheap "does-it-explode-on-import" checks the builder
+runs pre-push when a smoke-worthy file was touched. This catches the
+class of failure where lint/type-check are green but an import-time side
+effect (Flask app config read at FastAPI startup, missing module-level
+constant, circular import introduced by the refactor) crashes the
+framework. Each entry has:
+
+- `name` — stable label, used in mistakes.md tags
+- `trigger_paths` — file globs; smoke runs if ANY changed file matches
+  ANY glob
+- `smoke_cmd` — command run from `$WORKDIR` with `env -i` sandbox (same
+  sandbox as CI gate); must be cheap (<30s typical, 60s hard cap)
+- `timeout_s`
+- `reason` — one-line why this smoke exists
+
+Detect layers from project markers. None of these are mandatory — only
+add an entry when the corresponding marker is present.
+
+```bash
+LAYERS="[]"
+
+# python_import_root — catches broken imports / module-level crashes
+if [ -f "$WORKDIR/pyproject.toml" ] || [ -f "$WORKDIR/setup.py" ]; then
+  # Discover top-level package names from src/ or repo root
+  PKGS=$(find "$WORKDIR" -maxdepth 3 -type f -name __init__.py \
+           -not -path '*/\.*' -not -path '*/tests/*' -not -path '*/test/*' \
+           2>/dev/null | sed -E "s|$WORKDIR/||; s|/__init__.py$||" \
+           | awk -F'/' '{print $NF}' | sort -u | head -5)
+  for pkg in $PKGS; do
+    [ -z "$pkg" ] && continue
+    LAYERS=$(echo "$LAYERS" | jq --arg pkg "$pkg" \
+      '. + [{
+        name: "python_import_\($pkg)",
+        trigger_paths: ["**/*.py"],
+        smoke_cmd: ("python -c \"import \($pkg)\""),
+        timeout_s: 30,
+        reason: "import-time crash check for top-level package"
+      }]')
+  done
+fi
+
+# django_check — runs Django system checks without the server
+if [ -f "$WORKDIR/manage.py" ]; then
+  LAYERS=$(echo "$LAYERS" | jq \
+    '. + [{
+      name: "django_check",
+      trigger_paths: ["**/*.py", "**/settings*.py", "**/urls.py"],
+      smoke_cmd: "python manage.py check --fail-level WARNING",
+      timeout_s: 60,
+      reason: "Django system checks (URLs, models, templates, admin)"
+    }]')
+fi
+
+# flask_app_import — one-shot app factory import
+FLASK_HIT=$(git -C "$WORKDIR" grep -l -E 'app\s*=\s*Flask\(|create_app\s*\(' \
+            -- '*.py' 2>/dev/null | head -1)
+if [ -n "$FLASK_HIT" ]; then
+  MODULE=$(echo "$FLASK_HIT" | sed -E 's|/|.|g; s|\.py$||')
+  LAYERS=$(echo "$LAYERS" | jq --arg m "$MODULE" \
+    '. + [{
+      name: "flask_app_import",
+      trigger_paths: ["**/*.py"],
+      smoke_cmd: ("python -c \"import \($m)\""),
+      timeout_s: 30,
+      reason: "Flask app factory import — catches startup-time config reads"
+    }]')
+fi
+
+# fastapi_app_import — mirrors flask detection for FastAPI
+FASTAPI_HIT=$(git -C "$WORKDIR" grep -l -E 'app\s*=\s*FastAPI\(' \
+              -- '*.py' 2>/dev/null | head -1)
+if [ -n "$FASTAPI_HIT" ]; then
+  MODULE=$(echo "$FASTAPI_HIT" | sed -E 's|/|.|g; s|\.py$||')
+  LAYERS=$(echo "$LAYERS" | jq --arg m "$MODULE" \
+    '. + [{
+      name: "fastapi_app_import",
+      trigger_paths: ["**/*.py"],
+      smoke_cmd: ("python -c \"import \($m)\""),
+      timeout_s: 30,
+      reason: "FastAPI app import — catches async/startup path crashes"
+    }]')
+fi
+
+# pytest_smoke_dir — repos that maintain an explicit tests/smoke subdir
+if [ -d "$WORKDIR/tests/smoke" ]; then
+  LAYERS=$(echo "$LAYERS" | jq \
+    '. + [{
+      name: "pytest_smoke_dir",
+      trigger_paths: ["**/*.py"],
+      smoke_cmd: "pytest tests/smoke -x --no-cov -q",
+      timeout_s: 60,
+      reason: "repo-declared smoke test suite"
+    }]')
+fi
+
+# node_require_root — catches broken JS/TS imports at entry point
+if [ -f "$WORKDIR/package.json" ]; then
+  MAIN=$(jq -r '.main // "index.js"' "$WORKDIR/package.json" 2>/dev/null)
+  if [ -f "$WORKDIR/$MAIN" ]; then
+    LAYERS=$(echo "$LAYERS" | jq --arg m "./$MAIN" \
+      '. + [{
+        name: "node_require_root",
+        trigger_paths: ["**/*.js", "**/*.ts", "**/*.mjs", "**/*.cjs"],
+        smoke_cmd: ("node -e \"require(\\\"\($m)\\\")\""),
+        timeout_s: 30,
+        reason: "Node entry-point require — catches import-time crashes"
+      }]')
+  fi
+fi
+
+REGISTRY=$(jq -n \
+  --arg repo "$OWNER_REPO" \
+  --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  --argjson layers "$LAYERS" \
+  '{repo:$repo, generated_at:$ts, layers:$layers}')
+
+TMP="$STATE_DIR/smoke_registry.json.tmp.$$"
+printf '%s' "$REGISTRY" | jq . > "$TMP" \
+  && mv "$TMP" "$STATE_DIR/smoke_registry.json"
+```
+
+The builder's pre-push step filters `layers[]` against the set of
+changed files in the diff and runs only the matching smokes. An empty
+`layers[]` is fine — the builder skips the step.
+
 ### Step 6: Seed `allowed_commands.json` if missing
 
 ```bash

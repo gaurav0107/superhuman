@@ -26,6 +26,7 @@ Per-repo: `~/.superhuman/repos/<owner-repo>/`
 | `reviewer_intent_notes.md` | resolve-comments (append only) | planner, builder, resolve-comments |
 | `mistakes.md` | any agent (append only) | all |
 | `ci_commands.json` | repo-profiler | builder, reviewer-dispatcher |
+| `smoke_registry.json` | repo-profiler | builder |
 | `allowed_commands.json` | user-edited (seeded by repo-profiler) | builder |
 | `run_telemetry.jsonl` | opensource-contributor (append only) | future `/contribution-dashboard` |
 

@@ -392,6 +392,75 @@ EOF
 }
 ```
 
+### Step 4.5: Smoke gate (pre-push, trigger-based)
+
+Read `smoke_registry.json` (written by `repo-profiler` step 5.6). Compare
+each layer's `trigger_paths` against the set of files changed on this
+branch. Run the smokes whose globs match at least one changed file. A
+failing smoke blocks the push, same as a failing CI-gate command.
+
+This is the guard for the airflow-style incident where every CI command
+is green but the Flask app fails to import at FastAPI startup — lint
+doesn't run the code, but a 2-second smoke catches the explosion.
+
+```bash
+SMOKE_REG="$STATE_DIR/smoke_registry.json"
+if [ -f "$SMOKE_REG" ]; then
+  CHANGED=$(git -C "$WORKDIR" diff --name-only "$DEFAULT_BRANCH"...HEAD)
+  # Layers with any trigger_paths glob matching any changed file.
+  # We use `fnmatch` via bash case-glob (shopt extglob) to keep this
+  # shell-native.
+  shopt -s extglob globstar 2>/dev/null || true
+
+  MATCHED_LAYERS=$(jq -c '.layers[]' "$SMOKE_REG")
+  while IFS= read -r layer; do
+    [ -z "$layer" ] && continue
+    NAME=$(jq -r .name <<<"$layer")
+    CMD=$(jq -r .smoke_cmd <<<"$layer")
+    TIMEOUT=$(jq -r .timeout_s <<<"$layer")
+    GLOBS=$(jq -r '.trigger_paths[]' <<<"$layer")
+
+    HIT=0
+    for f in $CHANGED; do
+      for g in $GLOBS; do
+        # bash globstar matching via case; tolerates ** and *.ext
+        case "$f" in
+          $g) HIT=1; break 2 ;;
+        esac
+      done
+    done
+    [ "$HIT" -eq 0 ] && continue
+
+    echo "=== smoke: $NAME (timeout ${TIMEOUT}s) ==="
+    env -i PATH="/usr/local/bin:/usr/bin:/bin" HOME="/tmp/superhuman-sandbox" \
+      timeout "$TIMEOUT" bash -c "cd '$WORKDIR' && $CMD" \
+      2>&1 | tee "/tmp/smoke-${NAME}.log"
+    RC=${PIPESTATUS[0]}
+    if [ "$RC" -ne 0 ]; then
+      echo "SMOKE_FAIL: $NAME exit=$RC"
+      if classify_as_flake "/tmp/smoke-${NAME}.log"; then
+        echo "  (matched known flake signature — recording as flake, not mistake)"
+        record_flake_hit "smoke-$NAME" "$CMD" "/tmp/smoke-${NAME}.log"
+        export BUILDER_LAST_CI_FLAKE="true"
+      else
+        record_mistake "smoke_gate" "$NAME" "$RC" "$CMD"
+        return 1
+      fi
+    fi
+  done <<<"$MATCHED_LAYERS"
+fi
+```
+
+Smokes use the same sandbox as the CI gate (`env -i` + restricted PATH
++ `/tmp/superhuman-sandbox` as HOME). The allowlist/denylist check from
+Step 4 does not re-apply: smokes come from the profiler, not the repo's
+own workflows, and the profiler chose their binaries (`python`, `node`,
+`pytest`) — all already in the default `allowed_binaries` seed. If the
+user's edited `allowed_commands.json` has removed one of these, the
+smoke will fail under `env -i` with `command not found`; the builder
+records that as a normal `smoke_gate` mistake and the user fixes either
+the allowlist or the profiler detection.
+
 ### Step 5: Review-drift linter (pre-push)
 
 Three concrete grep-based checks. Each prints `PASS` / `WARN` / `FAIL` and
