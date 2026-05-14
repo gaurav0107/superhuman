@@ -4,8 +4,6 @@ Autonomous open-source contribution plugin for [Claude Code](https://claude.com/
 
 Ships a coordinated team of agents that picks an issue, profiles the repo, writes a plan, implements it, scores merge probability, iterates on the weakest dimension, and resolves review comments — all without hand-holding. State lives at `~/.superhuman/` and survives across sessions.
 
-Inspired by [obra/superpowers](https://github.com/obra/superpowers).
-
 ## What it does
 
 Run `Agent(subagent_type="opensource-contributor", ...)` (or `/contribution-fleet` for parallel runs) and the orchestrator will:
