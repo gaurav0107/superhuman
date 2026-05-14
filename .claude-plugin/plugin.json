@@ -1,7 +1,7 @@
 {
   "name": "superhuman",
   "description": "Personal skills and agents library for Claude Code",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "author": {
     "name": "gaurav0107"
   },
@@ -12,5 +12,17 @@
     "skills",
     "agents",
     "claude-code"
-  ]
+  ],
+  "requires": {
+    "plugins": {
+      "superpowers": {
+        "required": true,
+        "reason": "planner wraps superpowers:writing-plans; builder wraps superpowers:subagent-driven-development"
+      },
+      "everything-claude-code": {
+        "required": false,
+        "reason": "reviewer-dispatcher dispatches python/go/typescript/java/kotlin/rust/cpp/csharp/flutter/security reviewers from this plugin; falls back to inline prompts if missing"
+      }
+    }
+  }
 }
