@@ -115,6 +115,16 @@ CANDIDATE FILES:
 
 ### Step 5: Invoke `superpowers:writing-plans`
 
+Load the skill via the `Skill` tool (not `Read`):
+
+```
+Skill(skill="superpowers:writing-plans")
+```
+
+If the skill is not available in this session, stop and surface
+`PluginMissingError: superpowers:writing-plans` to the orchestrator — the
+`superpowers` plugin is a hard dependency declared in `plugin.json`.
+
 Dispatch the skill with the assembled context. Request a plan containing:
 
 1. **Root cause analysis** — 2-3 sentences derived from the issue body.

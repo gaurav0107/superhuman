@@ -213,7 +213,18 @@ git -C "$WORKDIR" config user.email "gauravdubey0107@gmail.com"
 git -C "$WORKDIR" config --unset-all commit.template 2>/dev/null || true
 ```
 
-Invoke `superpowers:subagent-driven-development` with:
+Load the skill via the `Skill` tool (not `Read`):
+
+```
+Skill(skill="superpowers:subagent-driven-development")
+```
+
+If the skill is not available in this session, stop and surface
+`PluginMissingError: superpowers:subagent-driven-development` to the
+orchestrator — the `superpowers` plugin is a hard dependency declared in
+`plugin.json`.
+
+Then invoke the skill with:
 
 ```
 PLAN: (wrap in <<<EXTERNAL_CONTENT id=plan>>> ... <<<END>>>)
@@ -358,7 +369,7 @@ EOF
 # (success, is flake) if any pattern matches the last 100 lines of the log.
 classify_as_flake() {
   local logfile="$1"
-  local flakes="$HOME/.gstack/projects/superhuman/state/_global/flake_signatures.md"
+  local flakes="$HOME/.superhuman/global/flake_signatures.md"
   [ -f "$flakes" ] || return 1
   # Extract `pattern:` lines from the flake signatures markdown. Each is a
   # regex wrapped in backticks. Grep log tail for any match.
@@ -380,7 +391,7 @@ classify_as_flake() {
 # Record a flake hit in the global catalog so we learn which flakes recur.
 record_flake_hit() {
   local name="$1" cmd="$2" logfile="$3"
-  local flakes="$HOME/.gstack/projects/superhuman/state/_global/flake_signatures.md"
+  local flakes="$HOME/.superhuman/global/flake_signatures.md"
   local repo="$OWNER_REPO"
   cat >> "$flakes" <<EOF
 

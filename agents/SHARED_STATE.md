@@ -43,29 +43,6 @@ Repo-agnostic: `~/.superhuman/global/`
 `<owner-repo>` is formed as `<owner>-<repo>` (single hyphen; slash replaced).
 Example: `apache/airflow` → `apache-airflow`.
 
-### Migration from `~/.gstack/`
-
-Earlier builds wrote to `~/.gstack/projects/superhuman/state/`. Any agent
-that finds state at the old path on first run should copy it forward:
-
-```bash
-OLD="$HOME/.gstack/projects/superhuman/state"
-NEW="$HOME/.superhuman"
-if [ -d "$OLD" ] && [ ! -d "$NEW" ]; then
-  mkdir -p "$NEW/repos" "$NEW/global"
-  for d in "$OLD"/*/; do
-    base=$(basename "$d")
-    [ "$base" = "_global" ] && continue
-    cp -R "$d" "$NEW/repos/$base"
-  done
-  [ -d "$OLD/_global" ] && cp -R "$OLD/_global/." "$NEW/global/"
-  printf 'migrated %s -> %s (old path preserved)\n' "$OLD" "$NEW"
-fi
-```
-
-One-shot; no need to delete the old tree. After migration every agent
-reads/writes only `~/.superhuman/`.
-
 ## Concurrency contract
 
 - **Single writer per file.** Only the owner agent writes. Readers never modify.
