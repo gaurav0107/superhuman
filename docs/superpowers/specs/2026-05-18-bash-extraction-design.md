@@ -111,13 +111,27 @@ that has no caller outside the agent. Wrong tool.
 
 ## Recommended approach: A — Surgical extraction
 
-> **Completeness first.** An independent audit pass against the agent
-> prompts found 8 places where naive extraction would change behavior.
-> They are addressed in **"Audit corrections"** below. The hard rule
-> the user gave is: *making them short is less important than the
-> completeness*. Where the two collide, completeness wins. The line
-> count targets in this section have been revised upward to reflect
-> that.
+> **Completeness first. Line counts are not a target.**
+>
+> An independent audit pass against the agent prompts found 8 places
+> where naive extraction would change behavior. They are addressed in
+> **"Audit corrections"** below.
+>
+> The user's rule: *"making them short is less important than the
+> completeness"* AND *"don't be so aggressive in lines reduction, you
+> can still choose to have more lines."*
+>
+> Read this as: the line counts in the layout block are **rough estimates,
+> not goals.** If preserving a behavior, a corner-case warning, or a
+> defensive comment means an agent file ends up the same length as today
+> — or longer — that's a successful outcome. The point of extraction is
+> to **isolate runnable mechanism from prose** so each can be reviewed
+> on its own terms. Token reduction is a side effect, not the prize.
+>
+> Concretely: a "successful" trim could leave any given agent at 100%
+> of its current size if the safety rules, judgment-required prose, and
+> defensive comments genuinely require it. The spec MUST NOT push
+> against an agent staying long when length is the right call.
 
 ### Target layout
 
@@ -126,18 +140,18 @@ superhuman/
 ├── .claude-plugin/
 │   ├── plugin.json
 │   └── marketplace.json
-├── agents/                       # behavioral prose only; cite scripts via ${CLAUDE_PLUGIN_ROOT}
-│   ├── SHARED_STATE.md           # 523 → ~460 (helpers move out, schemas move out, error rules stay)
-│   ├── builder.md                # 614 → ~280 (was ~180; revised for safety-rule inlining)
-│   ├── merge-probability-scorer.md  # 555 → ~260 (was ~180; cap-trigger logic stays inline)
-│   ├── opensource-contributor.md # 525 → ~340 (was ~200; flock holder stays inline)
-│   ├── repo-profiler.md          # 480 → ~320 (was ~200; classify_command rules stay inline)
-│   ├── repo-finder.md            # 448 → ~360 (was ~250; only state helpers move)
-│   ├── resolve-comments.md       # 400 → ~280 (was ~220; classification rules stay inline)
-│   ├── issue-selector.md         # 244 → ~210 (was ~190; small filters stay inline)
-│   ├── impact-auditor.md         # 211 → ~190 (was ~170; verdict matrix stays)
-│   ├── planner.md                # 209 → ~190 (was ~170; minimal extraction)
-│   └── reviewer-dispatcher.md    # 203 → ~190 (was ~170; error rules pointer stays)
+├── agents/                       # behavioral prose + safety rules + judgment-required logic; mechanical bash cited via ${CLAUDE_PLUGIN_ROOT}
+│   ├── SHARED_STATE.md           # today: 523. Sheds: helper bash, JSONC schema bodies. Keeps: layout, ownership, contract, run trace, error & rescue rules. Final length lands wherever it lands.
+│   ├── builder.md                # today: 614. Sheds: CI gate body, smoke gate body, drift linter body. Keeps: single-author rule + post-commit awk verifier (it IS the gate), force-with-lease rule, generated-file guard, impact-audit dispatch tree, push policy. Long is fine — safety prose is dense.
+│   ├── merge-probability-scorer.md  # today: 555. Sheds: arithmetic, jq pipelines, JSONL appends. Keeps: 10-dim definitions, weights, cap rules + cap TRIGGERS, threshold, plateau rule, blend formula prose.
+│   ├── opensource-contributor.md # today: 525. Sheds: prune awk, iteration cap math, fleet log, run summary. Keeps: phase ordering, flock claim + EXIT trap (must stay — fd ownership), suspicious-halt rule, terminal states.
+│   ├── repo-profiler.md          # today: 480. Sheds: workflow YAML extraction, smoke layer detector code, generated-file scan code. Keeps: classify_command rules (prose), denylist-first rule, never-overwrite rule, rationale per smoke layer.
+│   ├── repo-finder.md            # today: 448. Sheds: reputation_gate (now shared script), cooldown read. Keeps: scoring weights, blocklist precedence, discovery heuristics. Mostly stays inline.
+│   ├── resolve-comments.md       # today: 400. Sheds: delim helpers. Keeps: classification rules (judgment-required), suspicious-halt action, EXTERNAL_CONTENT wrapping, force-with-lease restatement.
+│   ├── issue-selector.md         # today: 244. Sheds: nothing required; small filters can stay inline. Implementation may extract A/B/B2/F/G filter pipelines if it improves clarity, but not pressured.
+│   ├── impact-auditor.md         # today: 211. Sheds: symbol-search jq + emit-JSON block. Keeps: verdict matrix (authoritative), classification logic.
+│   ├── planner.md                # today: 209. Minimal extraction (state.sh sourcing only). May stay at ~209 if extraction adds no clarity.
+│   └── reviewer-dispatcher.md    # today: 203. Minimal extraction. Pointer to SHARED_STATE.md error rules stays.
 ├── commands/
 │   ├── contribution-dashboard.md
 │   └── contribution-fleet.md
@@ -271,14 +285,14 @@ execution time, which is a separate code path that already exists.
 Net effect: the riskiest "extraction" is downgraded to "extract the
 boring half, leave the judgmental half alone."
 
-**§8. Builder safety rules don't fit in 180 lines; revised to ~280.**
+**§8. Builder safety rules need to stay inline. No line target.**
 Single-author defense-in-depth lives across builder.md:209-272 + 609-614:
-git config pin (~6 lines), invocation constraints text (~10 lines),
-post-commit verification awk block (~22 lines), and Rules-section
-restatement (~5 lines). Force-with-lease lives at :556-565 + :602.
-All of these stay inline per the defense-in-depth principle. The 30-line
-awk extractor for `VIOLATIONS` stays inline (it's the actual gate, not
-just the rule). 180 lines was unrealistic; 280 is honest.
+git config pin, invocation constraints text, post-commit verification
+awk block, and Rules-section restatement. Force-with-lease lives at
+:556-565 + :602. All of these stay inline per the defense-in-depth
+principle. The 30-line awk extractor for `VIOLATIONS` stays inline
+(it's the actual gate, not just the rule). **Resolution:** no line
+target. Builder lands at whatever length lets the safety prose breathe.
 
 ### Other audit findings carried into the implementation
 
@@ -540,11 +554,12 @@ After each step:
 - `classify_command` rules in repo-profiler agent prompt produce the
   same allowlist/denylist split as today on at least one real workflow
   YAML (`apache/airflow/.github/workflows/ci.yml` or equivalent).
-- Every agent `.md` is **shorter than today** but only by as much as
-  the safety-rule-inlining principle allows. **No agent target is
-  defended at the cost of completeness.** If an agent ends up at
-  90% of its current size because the safety rules genuinely require
-  it, that's a successful outcome.
+- **Length is not a success criterion.** An agent that ends up the same
+  length as today, or longer, because preserving safety rules and
+  judgment-required prose required it, is a successful outcome. The
+  success criterion is: mechanical bash that no longer needs to live in
+  the prompt has moved to scripts; everything else stays exactly where
+  reviewers can find it.
 - `builder.md` and `merge-probability-scorer.md` are **≥50% shorter**.
 - State files written by post-extraction code are **byte-identical** to
   pre-extraction code after timestamp normalization (`generated_at`,
