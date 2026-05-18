@@ -248,6 +248,105 @@ checked.
 - No change to `requires.plugins` (still `superpowers` required,
   `everything-claude-code` recommended).
 
+## New slash commands (loop primitives)
+
+The current command set (`/contribution-dashboard`, `/contribution-fleet`)
+forces every full run to go through `Agent(subagent_type="opensource-contributor", ...)`,
+which is awkward to script and impossible to put in a shell loop. Add
+three loop primitives so the user can drive runs from a slash command
+or a wrapping shell loop.
+
+### `/contribute [owner/repo] [issue#]`
+
+One full end-to-end contribution. Loopable. Wraps the `opensource-contributor`
+agent.
+
+- **No args** → pick top eligible repo from `~/.superhuman/global/repo-shortlist.json`
+  (skip blocklisted, skip in-cooldown, skip locked), then run.
+- **`owner/repo`** → use that repo, let `issue-selector` pick the issue.
+- **`owner/repo issue#`** → use that repo and that exact issue.
+
+Behavior is identical to today's `Agent(subagent_type="opensource-contributor", ...)`
+flow — same Phase-0..Phase-8 sequence, same lock semantics, same
+terminal outcomes recorded to `merge_outcomes.jsonl`. The slash command
+is a thin wrapper that resolves args, calls the orchestrator, and prints
+the terminal summary. No new behavior; just a new entry point.
+
+File: `commands/contribute.md`. Body resolves `$ARGUMENTS`, validates
+slug shape, optionally validates issue number, then dispatches:
+
+```
+Agent(subagent_type: "opensource-contributor",
+      prompt: "REPO=<repo> ISSUE=<n|auto> MODE=cli")
+```
+
+### `/repo-finder [N]`
+
+Refresh `~/.superhuman/global/repo-shortlist.json` with up to N candidates
+(default 10, max 25). Wraps the `repo-finder` agent.
+
+- Reads `repo_blocklist.json` and `repo_cooldown.json` to filter.
+- Writes `repo-shortlist.json` atomically (temp + rename).
+- Prints the new shortlist.
+
+File: `commands/repo-finder.md`. Body validates `$ARGUMENTS` (must be a
+positive integer or empty), then dispatches:
+
+```
+Agent(subagent_type: "repo-finder", prompt: "N=<n>")
+```
+
+### `/contribute-loop [N]`
+
+Run `/contribute` **sequentially** N times (default N=3, max N=20).
+Different from `/contribution-fleet`, which dispatches in parallel.
+Sequential matters when the user wants to:
+
+- Stay under GitHub rate limits on a single account.
+- Watch one run finish before deciding the next target.
+- Avoid the 10-parallel cap of fleet mode.
+
+Loop semantics:
+
+1. For i in 1..N:
+   1. Refresh shortlist if i==1 OR if the last run consumed the previous
+      top-of-shortlist (so we don't pick the same repo we just contributed
+      to and now hold a cooldown on).
+   2. Pick top eligible repo from shortlist.
+   3. Dispatch `opensource-contributor` (same as `/contribute` no-arg).
+   4. On terminal outcome `merged | merge_ready | rejected | abandoned |
+      stale`, append a row to `~/.superhuman/global/loop_runs.jsonl` with
+      `{loop_id, iter, repo, outcome, pr_url, completed_at}`.
+   5. On terminal outcome `suspicious_halt` or `crash`, **stop the loop**
+      and surface. Don't keep burning runs into a broken state.
+2. Render summary table (`repo | outcome | iters | pr`) for the loop.
+
+File: `commands/contribute-loop.md`. Body validates `$ARGUMENTS`, then
+loops over single dispatches. Sequential dispatch is naturally handled
+by issuing one `Agent` call per iteration in successive turns (the
+fleet trick of "single turn = parallel" is not used here — that's the
+whole point).
+
+### Why these three (and not more)
+
+The user wants a loop. These three are the minimum surface that enables
+a loop:
+
+- `/repo-finder` populates the candidate set.
+- `/contribute` consumes one candidate.
+- `/contribute-loop` does that N times sequentially.
+
+Phase-level entry points (`/repo-profiler`, `/issue-selector`, `/score-pr`,
+`/resolve-comments`) and maintenance valves (`/blocklist`, `/contribution-cancel`)
+are intentionally **deferred** to keep the v0.5.0 surface small. Add
+them later if real workflows need them.
+
+### Updates to existing commands
+
+- `/contribution-dashboard` — extended to read `loop_runs.jsonl` and show
+  the most recent loop's progress alongside individual runs.
+- `/contribution-fleet` — unchanged.
+
 ## Build order
 
 1. **Lib first** (`scripts/lib/`). Move `state_dir`, `atomic_write_json`,
@@ -264,6 +363,11 @@ checked.
    double rewrites.
 6. **Builder** (`scripts/builder/`). Largest, riskiest. CI gate, smoke gate,
    drift linter. Run end-to-end against a no-op PR before declaring done.
+7. **Loop primitive commands.** Add `commands/contribute.md`,
+   `commands/repo-finder.md`, `commands/contribute-loop.md`. These are
+   thin wrappers that dispatch existing agents — no new mechanism. Update
+   `commands/contribution-dashboard.md` to read `loop_runs.jsonl`. Update
+   `README.md` Commands table.
 
 After each step:
 - Update the corresponding agent `.md` to cite the new script.
@@ -272,6 +376,10 @@ After each step:
 
 ## Success criteria
 
+- `/contribute`, `/repo-finder`, `/contribute-loop` work end-to-end.
+  `/contribute-loop 2` completes two sequential runs, with the second
+  picking a different repo than the first (cooldown / shortlist refresh
+  logic verified).
 - Every agent `.md` is **≥30% shorter** in line count.
 - `builder.md` and `merge-probability-scorer.md` are **≥50% shorter**.
 - State files written by post-extraction code are **byte-identical** to
