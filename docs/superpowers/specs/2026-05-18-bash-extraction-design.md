@@ -111,6 +111,14 @@ that has no caller outside the agent. Wrong tool.
 
 ## Recommended approach: A — Surgical extraction
 
+> **Completeness first.** An independent audit pass against the agent
+> prompts found 8 places where naive extraction would change behavior.
+> They are addressed in **"Audit corrections"** below. The hard rule
+> the user gave is: *making them short is less important than the
+> completeness*. Where the two collide, completeness wins. The line
+> count targets in this section have been revised upward to reflect
+> that.
+
 ### Target layout
 
 ```
@@ -119,34 +127,37 @@ superhuman/
 │   ├── plugin.json
 │   └── marketplace.json
 ├── agents/                       # behavioral prose only; cite scripts via ${CLAUDE_PLUGIN_ROOT}
-│   ├── SHARED_STATE.md           # 523 → ~440 (helpers move out, schemas move out)
-│   ├── builder.md                # 614 → ~180
-│   ├── merge-probability-scorer.md  # 555 → ~180
-│   ├── opensource-contributor.md # 525 → ~200
-│   ├── repo-profiler.md          # 480 → ~200
-│   ├── repo-finder.md            # 448 → ~250
-│   ├── resolve-comments.md       # 400 → ~220
-│   ├── issue-selector.md         # 244 → ~190
-│   ├── impact-auditor.md         # 211 → ~170
-│   ├── planner.md                # 209 → ~170
-│   └── reviewer-dispatcher.md    # 203 → ~170
+│   ├── SHARED_STATE.md           # 523 → ~460 (helpers move out, schemas move out, error rules stay)
+│   ├── builder.md                # 614 → ~280 (was ~180; revised for safety-rule inlining)
+│   ├── merge-probability-scorer.md  # 555 → ~260 (was ~180; cap-trigger logic stays inline)
+│   ├── opensource-contributor.md # 525 → ~340 (was ~200; flock holder stays inline)
+│   ├── repo-profiler.md          # 480 → ~320 (was ~200; classify_command rules stay inline)
+│   ├── repo-finder.md            # 448 → ~360 (was ~250; only state helpers move)
+│   ├── resolve-comments.md       # 400 → ~280 (was ~220; classification rules stay inline)
+│   ├── issue-selector.md         # 244 → ~210 (was ~190; small filters stay inline)
+│   ├── impact-auditor.md         # 211 → ~190 (was ~170; verdict matrix stays)
+│   ├── planner.md                # 209 → ~190 (was ~170; minimal extraction)
+│   └── reviewer-dispatcher.md    # 203 → ~190 (was ~170; error rules pointer stays)
 ├── commands/
 │   ├── contribution-dashboard.md
 │   └── contribution-fleet.md
 ├── scripts/                      # NEW — runnable mechanism
 │   ├── lib/
-│   │   ├── state.sh              # state_dir, atomic_write_json, require_lock
+│   │   ├── state.sh              # state_dir, global_dir, atomic_write_json, require_lock, validate_json
 │   │   ├── delim.sh              # external-content uuid wrap/unwrap
-│   │   ├── telemetry.sh          # emit_telemetry, run_phase
+│   │   ├── telemetry.sh          # emit_telemetry, run_phase (phase enum lives here too)
+│   │   ├── mistakes.sh           # record_mistake (sourced by builder scripts; takes STATE_DIR/WORKDIR/OWNER_REPO as args)
 │   │   └── flake.sh              # classify_as_flake, record_flake_hit
 │   ├── orchestrator/
-│   │   ├── claim_lock.sh
-│   │   ├── reputation_gate.sh    # blocklist + cooldown check
+│   │   ├── reputation_gate.sh    # blocklist + cooldown check (used by orchestrator, repo-finder, fleet)
 │   │   ├── prune_mistakes.sh
 │   │   ├── iteration_cap.sh      # adaptive 3/6/10 by LOC
-│   │   └── append_fleet_log.sh
+│   │   ├── append_fleet_log.sh
+│   │   └── write_run_summary.sh  # writes ~/.superhuman/repos/<slug>/run_summary.json on every terminal state (incl. crash)
+│   #  NOTE: claim_lock is intentionally NOT a script — flock fd must be held by orchestrator's own shell.
+│   #  See "Audit corrections" §1.
 │   ├── profiler/
-│   │   ├── parse_workflows.sh    # classify_command tokenizer
+│   │   ├── parse_workflows.sh    # extracts run: blocks ONLY; classification stays in agent prompt (see Audit §7)
 │   │   ├── detect_smoke.sh       # python_import_root, django_check, flask_app_import,
 │   │   │                         # fastapi_app_import, pytest_smoke_dir, node_require_root
 │   │   └── catalog_generated.sh
@@ -157,8 +168,8 @@ superhuman/
 │   │   ├── identity_pin.sh       # post-commit author verify
 │   │   └── push_force_with_lease.sh
 │   └── scorer/
-│       ├── rubric.sh             # 10-dim weighted score
-│       ├── historical_blend.sh   # Laplace-ish smoothing
+│       ├── compute_score.sh      # arithmetic only (10 dims × weights, plateau detect, raw→final). Cap TRIGGERS stay in prompt.
+│       ├── historical_blend.sh   # Laplace-ish smoothing (jq -s preserved)
 │       ├── append_score.sh       # atomic append to scores[]
 │       ├── record_outcome.sh     # JSONL append to merge_outcomes.jsonl
 │       └── regen_cooldown.sh     # 180d window from merge_outcomes.jsonl
@@ -183,18 +194,143 @@ superhuman/
 └── LICENSE
 ```
 
+### Audit corrections (completeness over brevity)
+
+These are the eight critical findings from the independent audit, with
+the resolution adopted in this spec. Read this section before the
+per-agent table — it constrains how the table is interpreted.
+
+**§1. flock fd cannot move to a script.**
+Today `opensource-contributor.md:198-216` does `exec 9>"$LOCK_FILE";
+flock -n 9` and holds fd 9 for the entire run; a trap on EXIT releases.
+If `claim_lock.sh` is a separate process, fd 9 closes when the script
+returns, releasing the lock immediately. **Resolution:** the flock
+preamble **stays inline in `opensource-contributor.md`**. Only the
+*release-and-archive* logic on terminal state moves to a script. The
+SHARED_STATE.md run trace already says "trap releases flock fd" — that
+remains accurate.
+
+**§2. `record_mistake`, `classify_as_flake`, `record_flake_hit` are
+shared bash functions, not scripts.**
+Today builder.md:336-403 defines these as inline functions called from
+multiple steps. Sub-scripts with `set -euo pipefail` cannot share a
+function table. **Resolution:** promote them to `scripts/lib/mistakes.sh`
+and `scripts/lib/flake.sh`. Each builder sub-script sources both libs.
+Functions take `STATE_DIR`, `WORKDIR`, `OWNER_REPO` as **explicit args**,
+not closed-over env (extraction-safe).
+
+**§3. CI-health cap detection logic stays inline in scorer prompt.**
+Today the cap-trigger rule (compare `/tmp/<name>.log` timestamps against
+`mistakes.md`; SKIPPED only when no log exists at all for any
+`local_runnable` command) is prompt-time decision logic — Claude reads
+the rule and judges per case. **Resolution:** cap *triggers and rules*
+stay in `merge-probability-scorer.md` prompt. Only the *score arithmetic*
+(weighted sum, plateau detection, raw→final transform) moves to
+`scripts/scorer/compute_score.sh`. Renaming `rubric.sh` → `compute_score.sh`
+to make this scope explicit.
+
+**§4. Terminal-state signal for `/contribute-loop`.**
+`/contribute-loop` claims to "stop on `suspicious_halt` or `crash`" but
+those outcomes only land in `merge_outcomes.jsonl` when the orchestrator
+explicitly dispatches `MODE=record_outcome` — a crash skips that path.
+**Resolution:** add `scripts/orchestrator/write_run_summary.sh`. The
+orchestrator writes `~/.superhuman/repos/<slug>/run_summary.json` on
+EVERY terminal state including crash (via the EXIT trap), with shape
+`{outcome, iterations, pr_url, completed_at, exit_reason}`. The slash
+command reads this file. Normal terminal states ALSO write
+`merge_outcomes.jsonl`, but `run_summary.json` is the
+single-source-of-truth for the loop runner.
+
+**§5. `Error & rescue rules` section in SHARED_STATE.md must stay.**
+Audit caught an enumeration omission. `reviewer-dispatcher.md:157`
+points to this section for `AgentNotFoundError` / `ContractViolationError`
+fallbacks. **Resolution:** explicit addition to the "stays" list for
+`SHARED_STATE.md`. Lines 505-523 of today's SHARED_STATE.md remain
+verbatim.
+
+**§6. Six agents had line-count targets but no extraction map.**
+**Resolution:** the per-agent table below now lists what moves for
+all 11 agents, and the targets are revised to match what's actually
+achievable while preserving safety rules inline. `repo-finder.md`,
+`resolve-comments.md`, `issue-selector.md`, `impact-auditor.md`,
+`planner.md`, `reviewer-dispatcher.md` get only modest cuts (mostly
+state-helper sourcing); their bash is small or context-dependent.
+
+**§7. `classify_command` is prose, not bash today.**
+This is the single highest extraction risk in the spec. `repo-profiler.md:130-165`
+describes classification rules ("denylist first at the token level, not
+substring; strip quoted string literals; binary-name denials must match
+a whole token; ...") that Claude reads and applies with judgment.
+Translating prose to bash is a behavior change, not a move. **Resolution:**
+`scripts/profiler/parse_workflows.sh` does **only** the mechanical part
+— extracting `run:` blocks from YAML and emitting them on stdout. The
+**classification rules stay in the prompt**, and Claude does the
+classification (calling small helpers from `scripts/lib/state.sh` for
+the file write). Builder uses `allowed_commands.json` to enforce at
+execution time, which is a separate code path that already exists.
+Net effect: the riskiest "extraction" is downgraded to "extract the
+boring half, leave the judgmental half alone."
+
+**§8. Builder safety rules don't fit in 180 lines; revised to ~280.**
+Single-author defense-in-depth lives across builder.md:209-272 + 609-614:
+git config pin (~6 lines), invocation constraints text (~10 lines),
+post-commit verification awk block (~22 lines), and Rules-section
+restatement (~5 lines). Force-with-lease lives at :556-565 + :602.
+All of these stay inline per the defense-in-depth principle. The 30-line
+awk extractor for `VIOLATIONS` stays inline (it's the actual gate, not
+just the rule). 180 lines was unrealistic; 280 is honest.
+
+### Other audit findings carried into the implementation
+
+- **§9 (Concerning):** the inline reference matrix at `builder.md:137-200`
+  partially overlaps with `impact-auditor.md:118-128` but is not
+  byte-identical. Implementation must **diff the two before deletion**;
+  any verdicts present in builder's matrix and absent from auditor's
+  matrix get added to the auditor before the inline copy is removed.
+- **§10 (Concerning):** scorer `notes` field is polymorphic (sometimes
+  string, sometimes nested object). Schema for `current_contribution.json`
+  must declare `additionalProperties: true` on the scores[].notes leaf
+  AND list the known shapes in a `oneOf`. No data shape narrowing.
+- **§11 (Concerning):** JSONC comments carry load-bearing prose
+  (`repo_blocklist.json` precedence; `repo_cooldown.json` 90/180-day
+  rule; `generated_files.json` regenerate_cmd=null contract; etc.).
+  Implementation must transcribe these into the schema's
+  top-level `description` and per-property `description` fields, not
+  drop them.
+- **§12:** `run_telemetry.jsonl` allowed-phase enum (SHARED_STATE.md:371-373)
+  becomes a JSON Schema `enum` constraint and `lib/telemetry.sh::run_phase`
+  validates against it before append. Audit all `run_phase "<label>"`
+  call sites during the orchestrator move.
+- **§14:** `reputation_gate` is duplicated across `opensource-contributor.md`,
+  `repo-finder.md`, and `commands/contribution-fleet.md`. All three
+  routes through `scripts/orchestrator/reputation_gate.sh` after the
+  move. Spec table updated below.
+- **§16:** `resolve-comments.md` classification regex/rules stay in the
+  prompt (judgment-required). Only the EXTERNAL_CONTENT delim helpers
+  move to `lib/delim.sh`.
+- **§18 (Nit, but fix-during-move):** `merge-probability-scorer.md:257`
+  has an unbalanced paren in the python3 inline. **Fix in place during
+  extraction**, with the fix called out in the commit message.
+- **§22:** verify resolve-comments.md after trim still contains
+  "force-with-lease only" (Step 4, Rules section). It must.
+
 ### What moves vs. what stays per agent
 
 | Agent | Stays in prompt | Moves to script |
 |---|---|---|
-| `builder.md` | Single-author rule, force-with-lease rule, generated-file guard intent, impact-audit dispatch decision tree, push policy | `scripts/builder/ci_gate.sh`, `scripts/builder/smoke_gate.sh`, `scripts/builder/drift_linter.sh`, `scripts/builder/identity_pin.sh`, `scripts/builder/push_force_with_lease.sh`. Inline reference matrix marked "kept as documentation" — **deleted** (was dead weight per file's own admission). |
-| `merge-probability-scorer.md` | 10-dim rubric definitions, weights, cap rules, threshold, plateau rule | `scripts/scorer/rubric.sh`, `scripts/scorer/historical_blend.sh`, `scripts/scorer/append_score.sh`, `scripts/scorer/record_outcome.sh`, `scripts/scorer/regen_cooldown.sh` |
-| `opensource-contributor.md` | Phase ordering, lock semantics, suspicious-halt rule, terminal states | `scripts/orchestrator/claim_lock.sh`, `scripts/orchestrator/reputation_gate.sh`, `scripts/orchestrator/prune_mistakes.sh`, `scripts/orchestrator/iteration_cap.sh`, `scripts/orchestrator/append_fleet_log.sh`, `scripts/lib/telemetry.sh` |
-| `repo-profiler.md` | What gets profiled and why, denylist-first rule, never overwrite `allowed_commands.json` | `scripts/profiler/parse_workflows.sh`, `scripts/profiler/detect_smoke.sh`, `scripts/profiler/catalog_generated.sh` |
-| `repo-finder.md` | Scoring weights, blocklist precedence | (small bash, mostly stays inline; only the cooldown read moves to `scripts/lib/state.sh`) |
-| `resolve-comments.md` | Classification rules, suspicious-halt action, EXTERNAL_CONTENT wrapping | `scripts/lib/delim.sh` for delimiter helpers |
-| `repo-profiler.md`, `builder.md`, `scorer.md`, `orchestrator.md` (shared) | — | `scripts/lib/state.sh` (`state_dir`, `atomic_write_json`, `require_lock`) |
-| `SHARED_STATE.md` | Directory layout, ownership table, concurrency contract, prompt-injection wrapping rule, end-to-end run trace | JSON schema bodies → `schemas/*.schema.json`. Helper shell functions section → `scripts/lib/state.sh`. Document keeps a one-line pointer for each (e.g., "schema: see `schemas/repo_profile.schema.json`"). |
+| `builder.md` | Single-author rule (config pin + invocation constraints + post-commit awk verifier — all inline; the awk IS the gate), force-with-lease rule, generated-file guard rule, impact-audit dispatch decision tree, push policy, smoke-gate intent, classification of CI failures (real vs. flake) | `scripts/builder/ci_gate.sh` (sandbox + allowlist enforce), `scripts/builder/smoke_gate.sh` (takes `$CHANGED` file list as arg), `scripts/builder/drift_linter.sh` (5a/5b/5c sub-checks), `scripts/builder/push_force_with_lease.sh`. **Inline reference matrix at lines 137-200**: implementation must diff against `impact-auditor.md` matrix; any verdict only-in-builder gets ported to the auditor before inline deletion. |
+| `merge-probability-scorer.md` | 10-dim rubric definitions, weights, cap rules and **cap triggers** (Process cap, CI-health cap with flake exemption), threshold, plateau rule, historical-signal blend formula | `scripts/scorer/compute_score.sh` (arithmetic only — weighted sum, plateau detection, raw→final), `scripts/scorer/historical_blend.sh` (jq -s preserved), `scripts/scorer/append_score.sh`, `scripts/scorer/record_outcome.sh`, `scripts/scorer/regen_cooldown.sh`. Fix unbalanced paren at `:257` during move. |
+| `opensource-contributor.md` | Phase ordering, **flock + lock_holder claim** (must stay inline — fd ownership), suspicious-halt rule, terminal states, EXIT trap that releases lock and writes `run_summary.json` | `scripts/orchestrator/reputation_gate.sh`, `scripts/orchestrator/prune_mistakes.sh`, `scripts/orchestrator/iteration_cap.sh` (3/6/10 by LOC), `scripts/orchestrator/append_fleet_log.sh`, `scripts/orchestrator/write_run_summary.sh`, `scripts/lib/telemetry.sh` (run_phase + enum validation) |
+| `repo-profiler.md` | **classify_command rules** (prose; Claude judges), denylist-first rule, never-overwrite `allowed_commands.json`, smoke-layer detection intent and per-layer rationale | `scripts/profiler/parse_workflows.sh` (extract `run:` blocks only — no classification), `scripts/profiler/detect_smoke.sh` (six layer detectors), `scripts/profiler/catalog_generated.sh` (generator-marker scan with 500-entry cap) |
+| `repo-finder.md` | Scoring weights, blocklist precedence rule | `scripts/orchestrator/reputation_gate.sh` (shared with orchestrator + fleet), `scripts/lib/state.sh` for cooldown read. Scoring stays inline. |
+| `resolve-comments.md` | **Classification rules** (suspicious/question/nit/refactor/concern), suspicious-halt action, EXTERNAL_CONTENT wrapping rule, force-with-lease restatement | `scripts/lib/delim.sh` for delim wrap/unwrap helpers only. The classification regex/rules stay in prompt. |
+| `issue-selector.md` | Skip-rules (docs-only, competing PR, <24h), ranking weights | filter pipelines A/B/B2/F/G can move to `scripts/profiler/issue_filters.sh` only if their LOC justifies it; otherwise stay inline. **Decision deferred to implementation**, default = stay inline (small enough). |
+| `impact-auditor.md` | Verdict matrix (authoritative), classification logic | symbol-search jq pipeline (`:64-77`) and emit-JSON block (`:157-178`) move to `scripts/orchestrator/audit_impact.sh` — same script `builder.md` dispatches into. Verdict matrix prose stays. |
+| `planner.md` | Plan template, what each section means | minimal extraction (state.sh sourcing only) |
+| `reviewer-dispatcher.md` | Dispatch decision (weakest non-plateaued dim), specialist mapping table, FINDINGS_JSON contract | minimal extraction; pointer to SHARED_STATE.md "Error & rescue rules" stays in prompt |
+| `commands/contribution-fleet.md` (existing) | Fleet semantics, parallel-dispatch rule, hard cap | `scripts/orchestrator/reputation_gate.sh` replaces inline duplicate (lines 80-95 today) |
+| All agents that touch state | — | `scripts/lib/state.sh` (`state_dir`, `global_dir`, `atomic_write_json`, `require_lock`, `validate_json`) |
+| `SHARED_STATE.md` | Directory layout, ownership table, concurrency contract, prompt-injection wrapping rule, end-to-end run trace, **Error & rescue rules section** (lines 505-523 verbatim) | JSON schema bodies → `schemas/*.schema.json`. Helper shell functions → `scripts/lib/state.sh`. Document keeps one-line pointers (e.g., "schema: `schemas/repo_profile.schema.json`"). Comments in JSONC schemas → schema `description` fields, not dropped. |
 
 ### Script-call convention
 
@@ -349,8 +485,11 @@ them later if real workflows need them.
 
 ## Build order
 
-1. **Lib first** (`scripts/lib/`). Move `state_dir`, `atomic_write_json`,
-   `require_lock`, telemetry, delim helpers. Hand-test each.
+1. **Lib first** (`scripts/lib/`). Move `state_dir`, `global_dir`,
+   `atomic_write_json`, `require_lock`, `validate_json`, telemetry
+   (with phase enum validation), delim, **mistakes**, **flake** helpers.
+   Hand-test each. Tests in `tests/scripts/test_state.sh`,
+   `test_mistakes.sh`, `test_telemetry_phase_enum.sh`.
 2. **Schemas** (`schemas/*.schema.json`). Convert from JSONC in
    SHARED_STATE.md, validate against existing real state files in
    `~/.superhuman/repos/`.
@@ -360,9 +499,18 @@ them later if real workflows need them.
    Verify on a known PR with frozen scores in `merge_outcomes.jsonl`.
 5. **Orchestrator** (`scripts/orchestrator/`). Last-but-one because it
    sequences the others — extracting before downstream is moved would force
-   double rewrites.
+   double rewrites. **flock claim STAYS inline in the agent prompt**;
+   only `reputation_gate.sh`, `prune_mistakes.sh`, `iteration_cap.sh`,
+   `append_fleet_log.sh`, `write_run_summary.sh`, `audit_impact.sh` move.
+   Update `repo-finder.md` and `commands/contribution-fleet.md` to call
+   `reputation_gate.sh` (eliminates 3-place duplication, audit §14).
 6. **Builder** (`scripts/builder/`). Largest, riskiest. CI gate, smoke gate,
-   drift linter. Run end-to-end against a no-op PR before declaring done.
+   drift linter, push. **Identity pin awk verifier stays inline** (it IS
+   the gate, not just the rule). **Inline reference matrix at builder.md:137-200
+   is diffed against impact-auditor.md verdict matrix BEFORE deletion**;
+   any verdict only-in-builder is ported to the auditor first. Run
+   end-to-end against a no-op PR before declaring done. Verify
+   `mistakes.md` format byte-identical to pre-extraction.
 7. **Loop primitive commands.** Add `commands/contribute.md`,
    `commands/repo-finder.md`, `commands/contribute-loop.md`. These are
    thin wrappers that dispatch existing agents — no new mechanism. Update
@@ -380,7 +528,23 @@ After each step:
   `/contribute-loop 2` completes two sequential runs, with the second
   picking a different repo than the first (cooldown / shortlist refresh
   logic verified).
-- Every agent `.md` is **≥30% shorter** in line count.
+- `/contribute-loop` correctly stops on `suspicious_halt` and on `crash`
+  by reading `run_summary.json` (verified by injecting both terminal
+  states in a test run).
+- The flock mutex still holds across the entire run — verified by
+  attempting a second `/contribute owner/repo` against the same repo
+  while the first is mid-iteration; the second must abort with
+  `lock_holder` mismatch (NOT silently proceed).
+- `record_mistake` calls from extracted builder scripts produce
+  `mistakes.md` entries byte-identical to the pre-extraction format.
+- `classify_command` rules in repo-profiler agent prompt produce the
+  same allowlist/denylist split as today on at least one real workflow
+  YAML (`apache/airflow/.github/workflows/ci.yml` or equivalent).
+- Every agent `.md` is **shorter than today** but only by as much as
+  the safety-rule-inlining principle allows. **No agent target is
+  defended at the cost of completeness.** If an agent ends up at
+  90% of its current size because the safety rules genuinely require
+  it, that's a successful outcome.
 - `builder.md` and `merge-probability-scorer.md` are **≥50% shorter**.
 - State files written by post-extraction code are **byte-identical** to
   pre-extraction code after timestamp normalization (`generated_at`,
@@ -408,7 +572,28 @@ After each step:
 - **Schema strictness change.** Today JSONC comments document fields
   loosely; JSON Schema draft 2020-12 is stricter. Mitigation: schemas
   start with `additionalProperties: true` and required-list = current
-  required fields only. Tighten in a follow-up if desired.
+  required fields only. JSONC comments transcribed into top-level
+  `description` and per-property `description` fields, not dropped.
+  `notes` field on scores[] declared `oneOf` over known shapes
+  (string OR object) since it is currently polymorphic. Tighten in a
+  follow-up if desired.
+
+- **Prompt-time decision logic accidentally hard-coded.** The biggest
+  risk in extraction is moving prose-as-judgment to bash-as-rule
+  (audit §3, §7). Mitigation: any block where the agent is "applying
+  judgment per case" stays in prompt. Mechanical pipelines (regex
+  extraction, JSON shaping, file writes) move. **Rule of thumb:** if
+  the bash today contains comments like "first match wins" or "use
+  judgment for edge cases," it doesn't move.
+
+- **Defense-in-depth fragility.** Single-author rule, force-with-lease
+  rule, prompt-injection halt rule live in BOTH prompt AND scripts after
+  extraction. Mitigation: implementation must verify every agent prompt
+  still carries the rule text after the trim. Acceptance check: grep
+  the post-extraction agent files for the canonical phrases
+  ("force-with-lease", "single-author", "suspicious", "halt") — counts
+  must not decrease vs. pre-extraction except where an agent's role
+  legitimately doesn't need a given rule (verified case-by-case).
 
 ## Open questions
 
