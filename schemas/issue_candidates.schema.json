@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/gaurav0107/superhuman/schemas/issue_candidates.schema.json",
+  "title": "issue_candidates",
+  "description": "Ranked list of issues worth attempting. Owner: issue-selector.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["repo", "generated_at", "candidates"],
+  "properties": {
+    "repo":         {"type": "string"},
+    "generated_at": {"type": "string", "format": "date-time"},
+    "candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["number", "title", "score"],
+        "properties": {
+          "number":      {"type": "integer"},
+          "title":       {"type": "string"},
+          "score":       {"type": "number"},
+          "type":        {"type": "string"},
+          "labels":      {"type": "array", "items": {"type": "string"}},
+          "skip_reason": {"type": ["string", "null"]},
+          "notes":       {"type": "string"}
+        }
+      }
+    },
+    "skipped": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["number", "reason"],
+        "properties": {
+          "number": {"type": "integer"},
+          "reason": {"type": "string"}
+        }
+      }
+    }
+  }
+}
