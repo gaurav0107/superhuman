@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/gaurav0107/superhuman/schemas/ci_commands.schema.json",
+  "title": "ci_commands",
+  "description": "Local-runnable CI commands extracted from .github/workflows/. Owner: repo-profiler.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["repo", "generated_at", "local_runnable", "not_local_runnable"],
+  "properties": {
+    "repo":                {"type": "string", "description": "owner/repo slug"},
+    "generated_at":        {"type": "string", "format": "date-time"},
+    "workflows_scanned":   {"type": "array", "items": {"type": "string"}},
+    "local_runnable": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["name", "cmd", "timeout_s", "allowlisted"],
+        "properties": {
+          "name":        {"type": "string"},
+          "cmd":         {"type": "string"},
+          "timeout_s":   {"type": "integer"},
+          "allowlisted": {"type": "boolean"}
+        }
+      }
+    },
+    "not_local_runnable": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["name", "reason"],
+        "properties": {
+          "name":   {"type": "string"},
+          "reason": {"type": "string"}
+        }
+      }
+    }
+  }
+}
