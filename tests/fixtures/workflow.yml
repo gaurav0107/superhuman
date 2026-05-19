@@ -1,0 +1,13 @@
+# tests/fixtures/workflow.yml
+name: ci
+on: [push]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - run: ruff check .
+      - run: pytest tests/unit
+      - name: Build docs
+        run: |
+          pip install -r docs/requirements.txt
+          sphinx-build docs build
