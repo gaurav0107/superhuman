@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/gaurav0107/superhuman/schemas/repo_blocklist.schema.json",
+  "title": "repo_blocklist",
+  "description": "Explicit 'never contribute to this repo' list. Highest authority: overrides every other signal. Empty `reason` is allowed but discouraged. `expires_at`=null means permanent. Owner: user (manual edit). Readers: repo-finder, orchestrator (Phase 0).",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["version", "blocked"],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "description": "Schema version; increment on breaking changes"
+    },
+    "blocked": {
+      "type": "array",
+      "description": "Ordered list of repos that must never be contributed to",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["repo", "reason", "added_at", "expires_at"],
+        "properties": {
+          "repo": {
+            "type": "string",
+            "description": "owner/repo slug"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Human-readable reason; empty string is allowed but discouraged"
+          },
+          "added_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO-8601 timestamp when this entry was added"
+          },
+          "expires_at": {
+            "oneOf": [
+              {"type": "string", "format": "date-time"},
+              {"type": "null"}
+            ],
+            "description": "ISO-8601 expiry timestamp, or null for permanent block"
+          }
+        }
+      }
+    }
+  }
+}
