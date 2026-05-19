@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/gaurav0107/superhuman/schemas/repo_profile.schema.json",
+  "title": "repo_profile",
+  "description": "Contribution conventions extracted from the last 10-20 merged PRs of a target repo. Owner: repo-profiler. Readers: scorer, planner, builder, reviewer-dispatcher, resolve-comments.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["repo", "generated_at", "default_branch", "language", "commit_convention", "test_runner", "sampled_prs"],
+  "properties": {
+    "repo":              {"type": "string", "description": "owner/repo slug"},
+    "generated_at":      {"type": "string", "format": "date-time"},
+    "default_branch":    {"type": "string"},
+    "language":          {"type": "string", "description": "primary language (python, go, ts, ...)"},
+    "commit_convention": {"type": "string", "description": "e.g. conventional, none, custom"},
+    "pr_title_format":   {"type": "string"},
+    "pr_body_sections":  {"type": "array", "items": {"type": "string"}},
+    "test_runner":       {"type": "string"},
+    "lint_commands":     {"type": "array", "items": {"type": "string"}},
+    "closes_syntax":     {"type": "string"},
+    "dco_required":      {"type": "boolean"},
+    "cla_required":      {"type": "boolean"},
+    "reviewer_norms_summary": {"type": "string", "description": "2-3 sentences from last 10 merged PRs"},
+    "sampled_prs":       {"type": "array", "items": {"type": "integer"}}
+  }
+}
