@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/gaurav0107/superhuman/schemas/caller_graph.schema.json",
+  "title": "caller_graph",
+  "description": "Call-site analysis for a target function in a repo, recording each caller's location, execution context, and refactor safety. Owner: repo-profiler.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["repo", "issue_number", "target_function", "callers", "contexts_found"],
+  "properties": {
+    "repo":            {"type": "string", "description": "owner/repo slug"},
+    "issue_number":    {"type": "integer"},
+    "generated_at":    {"type": "string", "format": "date-time"},
+    "target_function": {"type": "string"},
+    "callers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["location", "caller_function", "execution_context", "safe_under_refactor", "notes"],
+        "properties": {
+          "location":          {"type": "string", "description": "file path and line number"},
+          "caller_function":   {"type": "string"},
+          "execution_context": {"type": "string"},
+          "safe_under_refactor": {"type": "boolean"},
+          "notes":             {"type": "string"}
+        }
+      }
+    },
+    "contexts_found": {
+      "type": "array",
+      "items": {"type": "string"}
+    }
+  }
+}
