@@ -467,40 +467,12 @@ Violating single-writer (two agents writing the same file) is a bug.
 
 ## Helper shell functions (reference)
 
-Each agent that reads/writes shared state should use these patterns:
-
-```bash
-# Resolve state dir for a repo
-state_dir() {
-  local owner_repo="$1"              # e.g. "apache/airflow"
-  local slug="${owner_repo/\//-}"    # "apache-airflow"
-  echo "$HOME/.superhuman/repos/$slug"
-}
-
-# Resolve the repo-agnostic global dir
-global_dir() {
-  echo "$HOME/.superhuman/global"
-}
-
-# Atomic JSON write
-atomic_write_json() {
-  local path="$1" content="$2"
-  local tmp="${path}.tmp.$$"
-  printf '%s' "$content" | jq . > "$tmp" && mv "$tmp" "$path"
-}
-
-# Validate current_contribution lock
-require_lock() {
-  local repo="$1" expected="$2"
-  local dir; dir=$(state_dir "$repo")
-  local lock
-  lock=$(jq -r .lock_holder "$dir/current_contribution.json" 2>/dev/null)
-  if [ "$lock" != "$expected" ]; then
-    echo "ERROR: expected lock_holder=$expected, got $lock" >&2
-    return 1
-  fi
-}
-```
+Helpers live at `${CLAUDE_PLUGIN_ROOT}/scripts/lib/state.sh`. Source it from
+any script that touches shared state. Functions: `state_dir`, `global_dir`,
+`atomic_write_json`, `require_lock`, `validate_json`. Append helpers live at
+`scripts/lib/mistakes.sh` (`record_mistake`) and `scripts/lib/flake.sh`
+(`classify_as_flake`, `record_flake_hit`). External-content delimiters at
+`scripts/lib/delim.sh` (`wrap_external`, `unwrap_external`).
 
 ## Error & rescue rules (inherited from CEO plan)
 
