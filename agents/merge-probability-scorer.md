@@ -216,48 +216,22 @@ Read `state/_global/merge_outcomes.jsonl` and compute `historical_signal`
 (0-10). Blend per-repo base rate with rubric score, then shrink toward the
 rubric when the corpus is thin.
 
-```bash
-OUTCOMES="$GLOBAL_DIR/merge_outcomes.jsonl"
-# Fallback: if corpus missing or empty, skip signal (score = rubric anchor)
-if [ ! -s "$OUTCOMES" ]; then
-  HIST_SIGNAL=$(printf '%.0f' "$RUBRIC_BEFORE_HIST")   # 0-10 rubric anchor
-else
-  # Per-repo merge rate in the last 180 days (runs with a PR opened)
-  REPO_STATS=$(jq -s --arg repo "$OWNER_REPO" '
-    map(select(.repo == $repo
-               and (.outcome == "merged"
-                    or .outcome == "closed_no_merge"
-                    or .outcome == "abandoned")))
-    | {
-        n: length,
-        merged: map(select(.outcome == "merged")) | length
-      }
-  ' "$OUTCOMES")
-  N=$(echo "$REPO_STATS"   | jq -r '.n')
-  M=$(echo "$REPO_STATS"   | jq -r '.merged')
+Compute the historical blend with
+`${CLAUDE_PLUGIN_ROOT}/scripts/scorer/historical_blend.sh
+--rubric-01 <01> --merge-log $HOME/.superhuman/global/merge_outcomes.jsonl
+--repo <OWNER/REPO> --weight 0.3`. The script returns
+`{merge_estimate_01, rubric_01, weight, blended}` on stdout. `blended`
+is the 0..10 historical signal — assign it to `HIST_SIGNAL`.
 
-  # Global base rate as the prior
-  GLOBAL_RATE=$(jq -s '
-    map(select(.outcome == "merged" or .outcome == "closed_no_merge"
-               or .outcome == "abandoned")) as $c
-    | if ($c | length) == 0 then 0.5
-      else (($c | map(select(.outcome == "merged")) | length) / ($c | length))
-      end
-  ' "$OUTCOMES")
-
-  # Shrinkage: Laplace-ish smoothing with prior weight k=4 runs
-  # merge_rate_est = (M + k*GLOBAL_RATE) / (N + k)
-  MERGE_EST=$(python3 -c "print(($M + 4*$GLOBAL_RATE) / ($N + 4))")
-
-  # Rubric anchor: convert running rubric score (without historical) to 0-1
-  RUBRIC_01=$(python3 -c "print($RUBRIC_BEFORE_HIST / 10.0)")
-
-  # Blend weight scales with sample size: w = N / (N + 4)
-  W=$(python3 -c "print($N / ($N + 4))")
-  BLENDED=$(python3 -c "print(round(10 * ((1-$W)*$RUBRIC_01 + $W*$MERGE_EST), 2)")
-  HIST_SIGNAL="$BLENDED"
-fi
-```
+The script implements Laplace-ish smoothing `(merged + 1) / (total + 2)`
+on the per-repo subset of `merge_outcomes.jsonl`, then blends with the
+rubric anchor: `blended = 10 * ((1-W) * rubric_01 + W * merge_estimate_01)`.
+`W=0.3` is the default; lower `W` when the corpus is thin (<5 runs for the
+repo). If the corpus file is absent or has zero entries for the repo,
+`merge_estimate_01` is 0.5 (Laplace prior with m=0, n=0) — equivalent
+to "no information; mild pull toward 50/50". This script replaces the
+prior inline `python3 -c "print(round(...))"` block which had an
+unbalanced paren bug at the historical-blend line (audit §18).
 
 Record in `scores[-1].notes.historical_signal`:
 
@@ -287,41 +261,40 @@ Do NOT let `historical_signal` exceed `rubric_anchor + 3` or fall below
 
 ### Step 4: Calculate Score
 
-```
-rubric_before_hist = (
-  correctness * 0.22 +
-  test_coverage * 0.18 +
-  style_compliance * 0.09 +
-  pr_format_compliance * 0.09 +
-  process_compliance * 0.09 +
-  scope_discipline * 0.09 +
-  documentation * 0.05 +
-  commit_hygiene * 0.05 +
-  risk_assessment * 0.04
-) * 10 / 0.90        # normalize the 90% that isn't historical
+The score arithmetic (weighted sum across 10 dimensions, then cap clamp)
+is delegated to a script. **You** decide which caps fire by inspecting
+the cap rules and triggers below; the script only enforces the clamp.
 
-# Now compute historical_signal using rubric_before_hist (see Step 3a)
-# then fold it into the final:
+Compute the score by invoking
+`${CLAUDE_PLUGIN_ROOT}/scripts/scorer/compute_score.sh
+--dimensions <DIMS_JSON> --caps-applied <CAPS_JSON> --plateaued <PLATS_JSON>`.
 
-raw_score = (
-  correctness * 0.22 +
-  test_coverage * 0.18 +
-  historical_signal * 0.10 +
-  style_compliance * 0.09 +
-  pr_format_compliance * 0.09 +
-  process_compliance * 0.09 +
-  scope_discipline * 0.09 +
-  documentation * 0.05 +
-  commit_hygiene * 0.05 +
-  risk_assessment * 0.04
-) * 10
+- `<DIMS_JSON>` is a single-line JSON object with all 10 dimension keys
+  (`correctness`, `test_coverage`, `historical`, `style`, `pr_format`,
+  `process`, `scope`, `docs`, `commit`, `risk`), each set to an integer
+  0-10. Use `historical` for the value computed in Step 3a above.
+- `<CAPS_JSON>` is a JSON array of cap names that fired (e.g. `[]`,
+  `["process"]`, `["ci_health"]`, `["ci_health_flake_skipped"]`).
+- `<PLATS_JSON>` is a JSON array of dimension names that plateaued.
 
-# Blocking caps (applied in order, lower cap wins)
-final_score = raw_score
+The script prints a JSON object with `{raw, final, dimensions, plateaued,
+caps_applied}` to stdout. `raw` is the unclamped weighted sum; `final` is
+clamped to 50 if `caps_applied` contains `process`, or 40 if it contains
+`ci_health` (lower cap wins).
+
+Rubric weights (preserved from prior inline arithmetic, encoded in the
+script): correctness 22, test_coverage 18, historical 10, style 9,
+pr_format 9, process 9, scope 9, docs 5, commit 5, risk 4 — sum 100.
+
+#### Cap rules and triggers
+
+The script enforces clamps; **you** decide which caps appear in
+`<CAPS_JSON>`. Apply these rules in order (lower cap wins on `final`):
+
+```python
 caps_applied = []
 if process_compliance <= 4:
-    final_score = min(final_score, 50)
-    caps_applied.append("process")
+    caps_applied.append("process")          # final clamped to 50
 if ci_failing:
     # Classify every failing log against flake_signatures.md.
     # If ALL failing commands matched a known flake, skip the cap.
@@ -329,9 +302,12 @@ if ci_failing:
         caps_applied.append("ci_health_flake_skipped")
         # record which signatures matched in notes
     else:
-        final_score = min(final_score, 40)
-        caps_applied.append("ci_health")
+        caps_applied.append("ci_health")    # final clamped to 40
 ```
+
+`is_flake_log` is the helper defined earlier in this file (greps the log
+tail against patterns in `flake_signatures.md`). You evaluate it per
+case — the script never reads logs.
 
 ### Step 5: Generate Feedback
 
@@ -398,10 +374,10 @@ Use these anchors to stay calibrated:
 ## Step 6: Persist the score to `current_contribution.json`
 
 After producing the score, append a new entry to the contribution's
-`scores[]` array atomically:
+`scores[]` array atomically. Build the entry, then call the helper:
 
 ```bash
-NEW_ENTRY=$(jq -n \
+NEW_ENTRY=$(jq -nc \
   --argjson iter "$ITERATION" \
   --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   --argjson final "$FINAL_SCORE" \
@@ -412,10 +388,13 @@ NEW_ENTRY=$(jq -n \
   '{iteration:$iter, ts:$ts, final:$final, raw:$raw,
     dimensions:$dims, plateaued:$plateau, caps_applied:$caps}')
 
-TMP="$CURRENT.tmp.$$"
-jq --argjson entry "$NEW_ENTRY" '.scores += [$entry]' "$CURRENT" > "$TMP" \
-  && mv "$TMP" "$CURRENT"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/scorer/append_score.sh" \
+  --repo "$OWNER_REPO" --score "$NEW_ENTRY"
 ```
+
+`append_score.sh` resolves the per-repo state directory via
+`state_dir()` and writes atomically (temp + rename) so readers never
+see partial JSON.
 
 `caps_applied` is the list of caps that fired on this run (e.g. `["process"]`,
 `["ci_health"]`, or `[]`). Used by reviewer-dispatcher and the orchestrator
@@ -426,27 +405,22 @@ to explain plateaus.
 The orchestrator invokes the scorer one last time with
 `MODE=record_outcome` when the PR is merged, closed-without-merge, or the
 run is abandoned. Do not re-score; instead append a single JSONL line to
-`global/merge_outcomes.jsonl`:
+`global/merge_outcomes.jsonl` via the helper script:
 
 ```bash
-mkdir -p "$GLOBAL_DIR"
-OUTCOME_LINE=$(jq -c -n \
-  --arg pr "$PR_URL" \
-  --arg repo "$OWNER_REPO" \
-  --arg outcome "$OUTCOME" \
-  --argjson final_scores "$LAST_SCORE_ENTRY" \
-  --argjson iters "$ITERATION_COUNT" \
-  --arg closed "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-  '{pr_url:$pr, repo:$repo, outcome:$outcome,
-    final_scores:$final_scores, iterations:$iters, closed_at:$closed}')
-
-# Append atomically — flock would be ideal, but \n-terminated writes on
-# POSIX <4KB are atomic for the common case.
-printf '%s\n' "$OUTCOME_LINE" >> "$GLOBAL_DIR/merge_outcomes.jsonl"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/scorer/record_outcome.sh" \
+  --repo "$OWNER_REPO" \
+  --pr-url "$PR_URL" \
+  --outcome "$OUTCOME" \
+  --iterations "$ITERATION_COUNT" \
+  --closed-at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  --final-scores "$LAST_SCORE_ENTRY"
 ```
 
 `$OUTCOME` is one of `merged`, `closed_no_merge`, `abandoned`,
-`suspicious_halt`. This file is the calibration corpus for future scorer
+`suspicious_halt`. The script appends a single \n-terminated JSON line
+to `~/.superhuman/global/merge_outcomes.jsonl` (POSIX append-atomic for
+<4KB writes). This file is the calibration corpus for future scorer
 tuning — never rewrite it, never prune it.
 
 ## Step 7.5 (MODE=record_outcome): Regenerate the cooldown gate
@@ -469,68 +443,14 @@ Rules (defined in SHARED_STATE.md; repeated here for reference):
   `cooldown_until`.
 
 ```bash
-OUTCOMES="$GLOBAL_DIR/merge_outcomes.jsonl"
-COOLDOWN="$GLOBAL_DIR/repo_cooldown.json"
-NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-CUTOFF=$(date -u -v-180d +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
-         || date -u -d '180 days ago' +%Y-%m-%dT%H:%M:%SZ)
-
-if [ ! -f "$OUTCOMES" ]; then
-  printf '{"version":1,"generated_at":"%s","cooldowns":[]}\n' "$NOW" \
-    | jq . > "$COOLDOWN.tmp.$$" && mv "$COOLDOWN.tmp.$$" "$COOLDOWN"
-else
-  COOLDOWNS=$(jq -s --arg cutoff "$CUTOFF" --arg now "$NOW" '
-    # keep only recent outcomes
-    map(select(.closed_at >= $cutoff))
-    # group by repo
-    | group_by(.repo)
-    | map({
-        repo: .[0].repo,
-        outcomes: .,
-        negatives: [.[] | select(.outcome == "closed_no_merge"
-                               or .outcome == "abandoned"
-                               or .outcome == "suspicious_halt")],
-        last_merged_at: ([.[] | select(.outcome == "merged") | .closed_at]
-                         | sort | last // null),
-        last_suspicious_at: ([.[] | select(.outcome == "suspicious_halt") | .closed_at]
-                             | sort | last // null)
-      })
-    | map(
-        . as $r
-        | if $r.last_merged_at != null then empty
-          else
-            ($r.negatives | length) as $nneg
-            | (if $r.last_suspicious_at != null then
-                 # 180 days from last suspicious
-                 ($r.last_suspicious_at | fromdateiso8601 + 180*86400
-                                        | strftime("%Y-%m-%dT%H:%M:%SZ"))
-               else null end) as $susp_until
-            | (if $nneg >= 2 then
-                 # 90 days from most recent negative
-                 ([$r.negatives[].closed_at] | sort | last
-                    | fromdateiso8601 + 90*86400
-                    | strftime("%Y-%m-%dT%H:%M:%SZ"))
-               else null end) as $neg_until
-            | ([$susp_until, $neg_until] | map(select(. != null)) | sort | last) as $until
-            | if $until == null then empty
-              else {
-                repo: $r.repo,
-                negative_outcomes_180d: $nneg,
-                last_merged_at: $r.last_merged_at,
-                cooldown_until: $until,
-                triggering_outcomes: ($r.negatives | map(.outcome) | unique)
-              }
-              end
-          end
-      )
-  ' < "$OUTCOMES")
-
-  NEW=$(jq -n --arg now "$NOW" --argjson cooldowns "$COOLDOWNS" \
-    '{version:1, generated_at:$now, cooldowns:$cooldowns}')
-  TMP="$COOLDOWN.tmp.$$"
-  printf '%s' "$NEW" | jq . > "$TMP" && mv "$TMP" "$COOLDOWN"
-fi
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/scorer/regen_cooldown.sh"
 ```
+
+The script reads `~/.superhuman/global/merge_outcomes.jsonl`, applies
+the rules above, and writes `~/.superhuman/global/repo_cooldown.json`
+atomically. Pass `--now <ISO_TS>` to override the reference time (test
+hook only). When `merge_outcomes.jsonl` is missing, the script writes
+an empty `{cooldowns:[]}` file rather than failing.
 
 If the regeneration fails (malformed line in `merge_outcomes.jsonl`,
 disk full), record a mistake with tag `scorer:cooldown-regen` and
