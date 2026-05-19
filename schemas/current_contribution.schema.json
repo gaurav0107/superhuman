@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/gaurav0107/superhuman/schemas/current_contribution.schema.json",
+  "title": "current_contribution",
+  "description": "Live contribution state. Owner: opensource-contributor. lock_holder field carries the active lock.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["repo", "issue_number", "branch", "iteration", "scores", "lock_holder"],
+  "properties": {
+    "repo":             {"type": "string"},
+    "issue_number":     {"type": "integer"},
+    "branch":           {"type": "string"},
+    "iteration":        {"type": "integer"},
+    "max_iterations":   {"type": "integer"},
+    "score_threshold":  {"type": "number"},
+    "scores": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["iteration", "ts", "dimensions", "raw", "final"],
+        "properties": {
+          "iteration":     {"type": "integer"},
+          "ts":            {"type": "string", "format": "date-time"},
+          "dimensions":    {"type": "object", "additionalProperties": {"type": "number"}},
+          "raw":           {"type": "number"},
+          "final":         {"type": "number"},
+          "plateaued":     {"type": "array", "items": {"type": "string"}},
+          "caps_applied":  {"type": "array", "items": {"type": "string"}},
+          "notes": {
+            "description": "Polymorphic per audit §10: free-form string OR structured object.",
+            "oneOf": [
+              {"type": "string"},
+              {"type": "object", "additionalProperties": true}
+            ]
+          }
+        }
+      }
+    },
+    "lock_holder": {"type": "string"},
+    "started_at":  {"type": "string", "format": "date-time"},
+    "pr_url":      {"type": ["string", "null"]}
+  }
+}
