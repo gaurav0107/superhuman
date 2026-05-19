@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/gaurav0107/superhuman/schemas/allowed_commands.schema.json",
+  "title": "allowed_commands",
+  "description": "User-editable seed; repo-profiler creates if missing, never overwrites",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["allowed_binaries", "denied_patterns"],
+  "properties": {
+    "allowed_binaries": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Builder will not run a command whose first token is not in this list"
+    },
+    "denied_patterns": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Builder will not run a command whose pattern matches any entry in this list"
+    }
+  }
+}
