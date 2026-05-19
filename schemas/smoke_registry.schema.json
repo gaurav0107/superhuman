@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/gaurav0107/superhuman/schemas/smoke_registry.schema.json",
+  "title": "smoke_registry",
+  "description": "Smoke-test registry per repo. Owner: repo-profiler. Each layer is a fast precheck the builder runs before invoking heavier CI.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["repo", "generated_at", "layers"],
+  "properties": {
+    "repo":         {"type": "string", "description": "owner/repo slug"},
+    "generated_at": {"type": "string", "format": "date-time"},
+    "layers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "cmd", "timeout_s"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "enum": [
+              "python_import_root",
+              "django_check",
+              "flask_app_import",
+              "fastapi_app_import",
+              "pytest_smoke_dir",
+              "node_require_root"
+            ]
+          },
+          "cmd":       {"type": "string"},
+          "cwd":       {"type": "string"},
+          "timeout_s": {"type": "number"}
+        },
+        "additionalProperties": true
+      }
+    }
+  }
+}
