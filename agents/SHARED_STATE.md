@@ -81,96 +81,24 @@ reading agent classifies it `suspicious` and halts auto-action (see
 
 ### `repo_profile.json`
 
-```jsonc
-{
-  "repo": "apache/airflow",
-  "generated_at": "2026-04-24T11:45:00Z",
-  "default_branch": "main",
-  "language": "python",
-  "commit_convention": "conventional",
-  "pr_title_format": "component: short description",
-  "pr_body_sections": ["Summary", "Test plan", "Checklist"],
-  "test_runner": "pytest",
-  "lint_commands": ["ruff check .", "mypy ."],
-  "closes_syntax": "Closes #N",
-  "dco_required": false,
-  "cla_required": false,
-  "reviewer_norms_summary": "2-3 sentences from last 10 merged PRs",
-  "sampled_prs": [12345, 12346, 12347]
-}
-```
+Schema: [`schemas/repo_profile.schema.json`](../schemas/repo_profile.schema.json).
+See top-level `description` and per-property `description` fields in the schema for field rationale.
 
 ### `issue_candidates.json`
 
-```jsonc
-{
-  "repo": "apache/airflow",
-  "generated_at": "2026-04-24T11:45:00Z",
-  "candidates": [
-    {
-      "number": 65685,
-      "title": "...",
-      "score": 23,
-      "type": "bug",
-      "labels": ["bug", "good first issue"],
-      "skip_reason": null,
-      "notes": "..."
-    }
-  ],
-  "skipped": [
-    {"number": 65123, "reason": "docs-only"}
-  ]
-}
-```
+Schema: [`schemas/issue_candidates.schema.json`](../schemas/issue_candidates.schema.json).
+See top-level `description` and per-property `description` fields in the schema for field rationale.
 
 ### `current_contribution.json`
 
-```jsonc
-{
-  "repo": "apache/airflow",
-  "issue_number": 65685,
-  "branch": "fix/65685-auth-role-public",
-  "iteration": 3,
-  "max_iterations": 6,
-  "score_threshold": 95,
-  "scores": [
-    {
-      "iteration": 1,
-      "ts": "2026-04-24T11:15:00Z",
-      "dimensions": {
-        "correctness": 7, "test_coverage": 5, "style": 8,
-        "pr_format": 6, "process": 9, "scope": 9,
-        "docs": 7, "commit": 7, "risk": 8
-      },
-      "raw": 78,
-      "final": 72,
-      "plateaued": [],
-      "caps_applied": ["process"]
-    }
-  ],
-  "lock_holder": "opensource-contributor",
-  "started_at": "2026-04-24T11:00:00Z",
-  "pr_url": null
-}
-```
+Schema: [`schemas/current_contribution.schema.json`](../schemas/current_contribution.schema.json).
+See top-level `description` and per-property `description` fields in the schema for field rationale.
+`scores[].notes` is polymorphic (string OR object) per audit §10 — see schema's `oneOf`.
 
 ### `ci_commands.json`
 
-```jsonc
-{
-  "repo": "apache/airflow",
-  "generated_at": "2026-04-24T11:45:00Z",
-  "workflows_scanned": [".github/workflows/ci.yml"],
-  "local_runnable": [
-    {"name": "lint", "cmd": "ruff check .", "timeout_s": 60, "allowlisted": true},
-    {"name": "unit", "cmd": "pytest tests/unit", "timeout_s": 300, "allowlisted": true}
-  ],
-  "not_local_runnable": [
-    {"name": "docker-e2e", "reason": "requires docker-compose with secrets"},
-    {"name": "deploy", "reason": "denylist pattern: curl detected"}
-  ]
-}
-```
+Schema: [`schemas/ci_commands.schema.json`](../schemas/ci_commands.schema.json).
+See top-level `description` and per-property `description` fields in the schema for field rationale.
 
 ### `allowed_commands.json`
 
@@ -178,41 +106,13 @@ User-editable seed. repo-profiler creates this if missing, pre-populated with
 the default allowlist. Builder will not run a command whose first token is not
 in `allowed_binaries` or whose pattern matches `denied_patterns`.
 
-```jsonc
-{
-  "allowed_binaries": [
-    "pytest", "ruff", "mypy", "black", "flake8",
-    "npm", "npx", "pnpm", "yarn", "jest", "vitest",
-    "go", "cargo", "make", "bundle", "rake",
-    "git", "gh", "python", "node", "bun"
-  ],
-  "denied_patterns": [
-    "curl", "wget", ";", "|", "`", "$(", "&&",
-    "rm -rf", "sudo", "chmod 777", "PATH=", "LD_"
-  ]
-}
-```
+Schema: [`schemas/allowed_commands.schema.json`](../schemas/allowed_commands.schema.json).
+See top-level `description` and per-property `description` fields in the schema for field rationale.
 
 ### `caller_graph.json`
 
-```jsonc
-{
-  "repo": "apache/airflow",
-  "issue_number": 65685,
-  "generated_at": "2026-04-24T11:45:00Z",
-  "target_function": "providers.fab.auth_manager.fab_auth_manager.FabAuthManager._get_auth_role_public",
-  "callers": [
-    {
-      "location": "providers/fab/src/airflow/providers/fab/auth_manager/fab_auth_manager.py:412",
-      "caller_function": "get_fastapi_middlewares",
-      "execution_context": "fastapi_startup",
-      "safe_under_refactor": false,
-      "notes": "runs before Flask app context exists"
-    }
-  ],
-  "contexts_found": ["flask_request", "fastapi_startup"]
-}
-```
+Schema: [`schemas/caller_graph.schema.json`](../schemas/caller_graph.schema.json).
+See top-level `description` and per-property `description` fields in the schema for field rationale.
 
 ### `repo_blocklist.json` (user-edited, manual)
 
@@ -221,19 +121,8 @@ every other signal. Empty `reason` is allowed but discouraged. `expires_at`
 = `null` means permanent. Read by repo-finder and by the orchestrator's
 Phase 0 eligibility check.
 
-```jsonc
-{
-  "version": 1,
-  "blocked": [
-    {
-      "repo": "example-org/example-repo",
-      "reason": "maintainer declined prior PR; do not retry",
-      "added_at": "2026-05-02T00:00:00Z",
-      "expires_at": null
-    }
-  ]
-}
-```
+Schema: [`schemas/repo_blocklist.schema.json`](../schemas/repo_blocklist.schema.json).
+See top-level `description` and per-property `description` fields in the schema for field rationale.
 
 ### `generated_files.json`
 
@@ -242,25 +131,8 @@ populates this by scanning for generator markers (`AUTO-GENERATED`,
 `DO NOT EDIT`, `@generated`, `openapi-generator`, `protoc`, `prisma generate`,
 `swagger-codegen`) in file headers.
 
-```jsonc
-{
-  "repo": "apache/airflow",
-  "generated_at": "2026-04-24T11:45:00Z",
-  "entries": [
-    {
-      "path": "airflow/api_fastapi/core_api/openapi/v1-generated.yaml",
-      "marker": "AUTO-GENERATED",
-      "regenerate_cmd": "pre-commit run update-openapi-spec --all-files"
-    },
-    {
-      "path": "providers/google/src/airflow/providers/google/cloud/openlineage/_proto_pb2.py",
-      "marker": "@generated by the protocol buffer compiler",
-      "regenerate_cmd": null
-    }
-  ]
-}
-```
-
+Schema: [`schemas/generated_files.schema.json`](../schemas/generated_files.schema.json).
+See top-level `description` and per-property `description` fields in the schema for field rationale.
 If `regenerate_cmd` is `null`, the builder skips the file and records a
 mistake under `builder:generated_file_blocked` rather than editing.
 
@@ -281,21 +153,8 @@ an outcome, scanning the last 180 days of `merge_outcomes.jsonl`. Rules:
 The cooldown is auto-expiring: once `cooldown_until` passes, the repo
 becomes eligible again on the next regeneration.
 
-```jsonc
-{
-  "version": 1,
-  "generated_at": "2026-05-02T00:00:00Z",
-  "cooldowns": [
-    {
-      "repo": "example-org/example-repo",
-      "negative_outcomes_180d": 2,
-      "last_merged_at": null,
-      "cooldown_until": "2026-08-02T00:00:00Z",
-      "triggering_outcomes": ["closed_no_merge", "abandoned"]
-    }
-  ]
-}
-```
+Schema: [`schemas/repo_cooldown.schema.json`](../schemas/repo_cooldown.schema.json).
+See top-level `description` and per-property `description` fields in the schema for field rationale.
 
 ### `plan.md`
 
@@ -337,37 +196,16 @@ Planner writes atomically (`plan.md.tmp.$$` + rename). Builder reads it in
 Learned preferences per reviewer, used by resolve-comments when drafting
 replies. Keys are GitHub logins; values capture observed tone signals.
 
-```jsonc
-{
-  "repo": "apache/airflow",
-  "generated_at": "2026-05-01T12:00:00Z",
-  "maintainers": {
-    "vincbeck": {
-      "prefers": "short_replies",
-      "signals": ["brief acknowledgements", "avoids emoji", "quotes code"],
-      "last_updated": "2026-05-01T12:00:00Z"
-    },
-    "uranusjr": {
-      "prefers": "detailed_rationale",
-      "signals": ["asks 'why not X'", "expects tradeoff discussion"],
-      "last_updated": "2026-04-27T09:00:00Z"
-    }
-  }
-}
-```
-
+Schema: [`schemas/maintainer_tone.schema.json`](../schemas/maintainer_tone.schema.json).
+See top-level `description` and per-property `description` fields in the schema for field rationale.
 Entries older than 180 days are pruned by resolve-comments on next write.
 
 ### `run_telemetry.jsonl` (per-repo, append-only)
 
 One line per phase-completion, so the dashboard can show where time went.
 
-```jsonc
-{"ts":"2026-05-01T12:00:00Z","iteration":1,"phase":"builder:initial","duration_s":142,"outcome":"ok"}
-{"ts":"2026-05-01T12:02:30Z","iteration":1,"phase":"scorer","duration_s":38,"outcome":"ok","final_score":72}
-{"ts":"2026-05-01T12:05:00Z","iteration":1,"phase":"reviewer-dispatcher","duration_s":55,"outcome":"ok","dimension":"test_coverage"}
-```
-
+Schema (per-line): [`schemas/run_telemetry.schema.json`](../schemas/run_telemetry.schema.json).
+See top-level `description` and per-property `description` fields in the schema for field rationale.
 Allowed `phase` values: `repo-profiler`, `issue-selector`, `planner`,
 `builder:initial`, `builder:apply_findings`, `builder:apply_comments`,
 `scorer`, `reviewer-dispatcher`, `resolve-comments`.
