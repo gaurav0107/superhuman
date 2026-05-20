@@ -229,135 +229,35 @@ fi
 
 ### Step 4: Local CI gate (MANDATORY before any push)
 
-Read `ci_commands.json` and `allowed_commands.json`.
+For each `local_runnable[].cmd` from `ci_commands.json`, invoke the gate
+script. The script enforces both the token-level allowlist (whole-token
+match against `allowed_binaries`) and the denylist (shell-metas, env
+prefixes, multi-word patterns) re-verified at runtime, then runs the
+command in a sandbox (`env -i` + restricted PATH + `/tmp/superhuman-sandbox`
+as HOME), and on failure classifies the log against
+`flake_signatures.md` before deciding whether to record a real mistake.
 
 ```bash
-CI="$STATE_DIR/ci_commands.json"
-ALLOW="$STATE_DIR/allowed_commands.json"
-
-jq -c '.local_runnable[]' "$CI" | while read -r entry; do
+jq -c '.local_runnable[]' "$STATE_DIR/ci_commands.json" | while read -r entry; do
   NAME=$(jq -r .name <<<"$entry")
-  CMD=$(jq -r .cmd <<<"$entry")
-  TIMEOUT=$(jq -r .timeout_s <<<"$entry")
-
-  # Re-verify allowlist at runtime (defense in depth)
-  FIRST_TOKEN=$(awk '{print $1}' <<<"$CMD")
-  if ! jq -e --arg t "$FIRST_TOKEN" '.allowed_binaries | index($t)' "$ALLOW" >/dev/null; then
-    echo "SKIP $NAME: first token '$FIRST_TOKEN' not in allowed_binaries"
-    continue
-  fi
-  # Re-verify denylist using token-level matching. Naive substring
-  # matching rejected `pytest -k "a|b"` (quoted pipe) and
-  # `env PATHPREFIX=…` (innocent substring `PATH=`). We strip quoted
-  # content first, then match whole tokens for binaries, scan the
-  # stripped string for unquoted shell metas, and check env-prefix
-  # tokens only in leading position. See repo-profiler step 5 for the
-  # matching spec this mirrors.
-  STRIPPED=$(printf '%s' "$CMD" | sed -E 's/"[^"]*"//g; '"s/'[^']*'//g")
-  DENIED_HIT=""
-  while IFS= read -r p; do
-    case "$p" in
-      ';'|'|'|'`'|'$('|'&&')
-        # Shell-meta: reject if still present after stripping quotes.
-        [[ "$STRIPPED" == *"$p"* ]] && { DENIED_HIT="$p"; break; }
-        ;;
-      'PATH='|'LD_'*)
-        # Env-prefix: must be the leading token of the stripped command.
-        LEAD=$(awk '{print $1}' <<<"$STRIPPED")
-        [[ "$LEAD" == "$p"* ]] && { DENIED_HIT="$p"; break; }
-        ;;
-      *)
-        # Binary name or multi-word (e.g. "rm -rf"): match whole token(s).
-        if [[ "$p" == *" "* ]]; then
-          [[ " $STRIPPED " == *" $p "* ]] && { DENIED_HIT="$p"; break; }
-        else
-          for tok in $STRIPPED; do
-            [ "$tok" = "$p" ] && { DENIED_HIT="$p"; break 2; }
-          done
-        fi
-        ;;
-    esac
-  done < <(jq -r '.denied_patterns[]' "$ALLOW")
-  if [ -n "$DENIED_HIT" ]; then
-    echo "SKIP $NAME: matches denied pattern '$DENIED_HIT'"
-    continue
-  fi
-
-  echo "=== $NAME (timeout ${TIMEOUT}s) ==="
-  env -i PATH="/usr/local/bin:/usr/bin:/bin" HOME="/tmp/superhuman-sandbox" \
-    timeout "$TIMEOUT" bash -c "cd '$WORKDIR' && $CMD" 2>&1 | tee "/tmp/${NAME}.log"
-  RC=${PIPESTATUS[0]}
-  if [ "$RC" -ne 0 ]; then
-    echo "FAIL: $NAME exit=$RC"
-    if classify_as_flake "/tmp/${NAME}.log"; then
-      echo "  (matched known flake signature — recording as flake, not mistake)"
-      record_flake_hit "$NAME" "$CMD" "/tmp/${NAME}.log"
-      # Flake: do not block push, but annotate the run for the scorer
-      export BUILDER_LAST_CI_FLAKE="true"
-    else
-      record_mistake "ci_gate" "$NAME" "$RC" "$CMD"
-      return 1
-    fi
-  fi
+  CMD=$(jq -r .cmd  <<<"$entry")
+  ${CLAUDE_PLUGIN_ROOT}/scripts/builder/ci_gate.sh \
+    --state-dir "$STATE_DIR" --workdir "$WORKDIR" \
+    --owner-repo "$OWNER_REPO" --command "$CMD"
+  RC=$?
+  case $RC in
+    0) ;;                                            # clean — continue
+    1) export BUILDER_LAST_CI_FLAKE="true" ;;        # known flake — log + continue
+    *) echo "FAIL: $NAME exit=$RC"; return 1 ;;      # real failure or denylist block
+  esac
 done
 ```
 
-If any command fails, append to `mistakes.md` with the last 20 lines of
-output and exit — do not push.
-
-```bash
-record_mistake() {
-  local tag="$1" name="$2" rc="$3" cmd="$4"
-  local tail_log
-  tail_log=$(tail -20 "/tmp/${name}.log" 2>/dev/null | sed 's/^/    /')
-  cat >> "$STATE_DIR/mistakes.md" <<EOF
-
-## $(date -u +%Y-%m-%dT%H:%M:%SZ) — builder:$tag
-- **Command**: $cmd
-- **Exit**: $rc
-- **Tail**:
-$tail_log
-- **Rule**: do not push without passing '$name' locally
-EOF
-}
-
-# Classify a CI failure log against known flake signatures. Returns 0
-# (success, is flake) if any pattern matches the last 100 lines of the log.
-classify_as_flake() {
-  local logfile="$1"
-  local flakes="$HOME/.superhuman/global/flake_signatures.md"
-  [ -f "$flakes" ] || return 1
-  # Extract `pattern:` lines from the flake signatures markdown. Each is a
-  # regex wrapped in backticks. Grep log tail for any match.
-  local tail
-  tail=$(tail -100 "$logfile" 2>/dev/null)
-  [ -z "$tail" ] && return 1
-  while IFS= read -r line; do
-    # pattern lines look like: - pattern: `regex here`
-    local rx
-    rx=$(printf '%s' "$line" | sed -nE 's/.*pattern:[[:space:]]*`([^`]+)`.*/\1/p')
-    [ -z "$rx" ] && continue
-    if echo "$tail" | grep -qE "$rx"; then
-      return 0
-    fi
-  done < <(grep '^- pattern:' "$flakes")
-  return 1
-}
-
-# Record a flake hit in the global catalog so we learn which flakes recur.
-record_flake_hit() {
-  local name="$1" cmd="$2" logfile="$3"
-  local flakes="$HOME/.superhuman/global/flake_signatures.md"
-  local repo="$OWNER_REPO"
-  cat >> "$flakes" <<EOF
-
-## hit: $(date -u +%Y-%m-%dT%H:%M:%SZ)
-- repo: $repo
-- command: $cmd
-- log-tail: $(tail -3 "$logfile" 2>/dev/null | tr '\n' ' ' | cut -c1-200)
-EOF
-}
-```
+`ci_gate.sh` exits 0 (clean), 1 (flake-classified failure — caller
+continues), or 2 (real failure or denylist block — caller aborts the
+phase). Mistakes and flake hits are appended by the script via
+`scripts/lib/mistakes.sh::record_mistake` and
+`scripts/lib/flake.sh::classify_as_flake`/`record_flake_hit`.
 
 ### Step 4.5: Smoke gate (pre-push, trigger-based)
 
@@ -370,52 +270,25 @@ This is the guard for the airflow-style incident where every CI command
 is green but the Flask app fails to import at FastAPI startup — lint
 doesn't run the code, but a 2-second smoke catches the explosion.
 
+After the CI gate, dump the changed-file set to a temp file and invoke
+the smoke gate script. The script handles layer matching (bash globstar
+case-glob), the relevance heuristic (skip Python layers if no `.py`
+changed; skip Node layers if no `.js`/`.ts`/`.jsx`/`.tsx` changed), and
+the same sandbox + flake classification as the CI gate.
+
 ```bash
-SMOKE_REG="$STATE_DIR/smoke_registry.json"
-if [ -f "$SMOKE_REG" ]; then
-  CHANGED=$(git -C "$WORKDIR" diff --name-only "$DEFAULT_BRANCH"...HEAD)
-  # Layers with any trigger_paths glob matching any changed file.
-  # We use `fnmatch` via bash case-glob (shopt extglob) to keep this
-  # shell-native.
-  shopt -s extglob globstar 2>/dev/null || true
+git -C "$WORKDIR" diff --name-only "$DEFAULT_BRANCH"...HEAD \
+  > "$STATE_DIR/.changed.tmp"
 
-  MATCHED_LAYERS=$(jq -c '.layers[]' "$SMOKE_REG")
-  while IFS= read -r layer; do
-    [ -z "$layer" ] && continue
-    NAME=$(jq -r .name <<<"$layer")
-    CMD=$(jq -r .smoke_cmd <<<"$layer")
-    TIMEOUT=$(jq -r .timeout_s <<<"$layer")
-    GLOBS=$(jq -r '.trigger_paths[]' <<<"$layer")
-
-    HIT=0
-    for f in $CHANGED; do
-      for g in $GLOBS; do
-        # bash globstar matching via case; tolerates ** and *.ext
-        case "$f" in
-          $g) HIT=1; break 2 ;;
-        esac
-      done
-    done
-    [ "$HIT" -eq 0 ] && continue
-
-    echo "=== smoke: $NAME (timeout ${TIMEOUT}s) ==="
-    env -i PATH="/usr/local/bin:/usr/bin:/bin" HOME="/tmp/superhuman-sandbox" \
-      timeout "$TIMEOUT" bash -c "cd '$WORKDIR' && $CMD" \
-      2>&1 | tee "/tmp/smoke-${NAME}.log"
-    RC=${PIPESTATUS[0]}
-    if [ "$RC" -ne 0 ]; then
-      echo "SMOKE_FAIL: $NAME exit=$RC"
-      if classify_as_flake "/tmp/smoke-${NAME}.log"; then
-        echo "  (matched known flake signature — recording as flake, not mistake)"
-        record_flake_hit "smoke-$NAME" "$CMD" "/tmp/smoke-${NAME}.log"
-        export BUILDER_LAST_CI_FLAKE="true"
-      else
-        record_mistake "smoke_gate" "$NAME" "$RC" "$CMD"
-        return 1
-      fi
-    fi
-  done <<<"$MATCHED_LAYERS"
-fi
+${CLAUDE_PLUGIN_ROOT}/scripts/builder/smoke_gate.sh \
+  --state-dir "$STATE_DIR" --changed-file "$STATE_DIR/.changed.tmp" \
+  --workdir "$WORKDIR" --owner-repo "$OWNER_REPO"
+RC=$?
+case $RC in
+  0) ;;                                            # no smokes triggered or all passed
+  1) export BUILDER_LAST_CI_FLAKE="true" ;;        # flake-classified — log + continue
+  *) echo "SMOKE_FAIL: see mistakes.md"; return 1 ;;# real failure — abort phase
+esac
 ```
 
 Smokes use the same sandbox as the CI gate (`env -i` + restricted PATH
@@ -430,95 +303,55 @@ the allowlist or the profiler detection.
 
 ### Step 5: Review-drift linter (pre-push)
 
-Three concrete grep-based checks. Each prints `PASS` / `WARN` / `FAIL` and
-records WARN+FAIL to `mistakes.md` with tag `builder:review-drift`. None
-block push — they are fixups for the next iteration.
+Three concrete grep-based checks, each one a `WARN`-only mistake (rc=0)
+appended to `mistakes.md` with tag `builder:review-drift`. None block
+push — they are fixups for the next iteration.
 
-#### 5a: Newsfragment filename matches issue
-
-If the repo ships newsfragments (Airflow, Twisted, many pip-ecosystem repos),
-the filename must start with the issue number.
-
-```bash
-NEWS_DIRS=$(git -C "$WORKDIR" diff --name-only "$DEFAULT_BRANCH"...HEAD \
-  | grep -E '(newsfragments|changes|changelog\.d)/' || true)
-if [ -n "$NEWS_DIRS" ]; then
-  for nf in $NEWS_DIRS; do
-    base=$(basename "$nf")
-    # Expect filenames like 65685.bugfix.rst or 65685-description.md
-    if ! echo "$base" | grep -qE "^${ISSUE_NUMBER}[.-]"; then
-      echo "WARN review-drift: newsfragment $nf does not start with #$ISSUE_NUMBER"
-      record_mistake "review-drift" "newsfragment-issue-mismatch" 0 \
-        "newsfragment $nf should start with $ISSUE_NUMBER"
-    fi
-  done
-fi
-```
-
-#### 5b: Removed-symbol echo in commit body
-
-If a symbol was deleted in the diff, the commit message must not still
-reference it (common drift pattern: code changed, message stale).
+- **5a — newsfragment / issue match.** If the diff touches `newsfragments/`,
+  `changes/`, or `changelog.d/`, the filename must start with
+  `<ISSUE_NUMBER>.` or `<ISSUE_NUMBER>-` (Airflow, Twisted, pip-ecosystem
+  convention). Any other filename gets a WARN.
+- **5b — removed-symbol echo in commit body.** If the diff deletes a
+  `def`/`class`/`function`/`fn <name>` line, the latest commit body must
+  not still reference `<name>` as a whole word. Common drift pattern:
+  code changed, message stale.
+- **5c — provider name leak into core.** If the repo uses a
+  `providers/<name>/` split (Airflow, Docker CLI), no file edited outside
+  `providers/` may mention a provider directory name as a whole-word
+  identifier (case-insensitive). Reviewers reject these every time.
 
 ```bash
-# Identifiers removed (starts with `-` in diff, then `def `/`class `/`function `)
-REMOVED=$(git -C "$WORKDIR" diff "$DEFAULT_BRANCH"...HEAD \
-  | grep -E '^-\s*(def|class|function|fn) [A-Za-z_][A-Za-z0-9_]*' \
-  | sed -E 's/^-\s*(def|class|function|fn) ([A-Za-z_][A-Za-z0-9_]*).*/\2/' \
-  | sort -u)
-
-COMMIT_BODY=$(git -C "$WORKDIR" log -1 --format=%B)
-for sym in $REMOVED; do
-  if echo "$COMMIT_BODY" | grep -qw "$sym"; then
-    echo "WARN review-drift: removed symbol '$sym' still referenced in commit body"
-    record_mistake "review-drift" "removed-symbol-in-commit" 0 \
-      "removed symbol $sym still named in commit message; reword or keep the symbol"
-  fi
-done
+${CLAUDE_PLUGIN_ROOT}/scripts/builder/drift_linter.sh \
+  --state-dir "$STATE_DIR" --workdir "$WORKDIR" \
+  --owner-repo "$OWNER_REPO" --issue-number "$ISSUE_NUMBER" \
+  --diff-base "$DEFAULT_BRANCH"
 ```
 
-#### 5c: Base-layer files don't name provider-scoped identifiers
-
-If the repo uses the `providers/<name>/` split (Airflow, Docker CLI), files
-outside `providers/` must not mention provider names that leaked across the
-boundary — a common reviewer objection.
-
-```bash
-# Detect provider names from the tree
-PROVIDERS=$(find "$WORKDIR/providers" -mindepth 1 -maxdepth 1 -type d \
-  -printf '%f\n' 2>/dev/null | head -50)
-
-# Files edited outside providers/
-CORE_EDITS=$(git -C "$WORKDIR" diff --name-only "$DEFAULT_BRANCH"...HEAD \
-  | grep -v '^providers/' || true)
-
-for cf in $CORE_EDITS; do
-  for prov in $PROVIDERS; do
-    # Case-insensitive whole-word match to catch FAB/fab/Fab consistently
-    if git -C "$WORKDIR" diff "$DEFAULT_BRANCH"...HEAD -- "$cf" \
-         | grep -qiE "(^|[^A-Za-z0-9_])$prov([^A-Za-z0-9_]|\$)"; then
-      echo "WARN review-drift: core file $cf mentions provider '$prov'"
-      record_mistake "review-drift" "provider-leak-into-core" 0 \
-        "$cf references provider '$prov' — keep provider names out of core"
-      break
-    fi
-  done
-done
-```
-
-The check uses the existing `record_mistake` helper with rc=0 so the entry
-is written but the build continues.
+`drift_linter.sh` always exits 0; every WARN it produces is appended to
+`$STATE_DIR/mistakes.md` via `scripts/lib/mistakes.sh::record_mistake`
+with rc=0 so the build continues. The check fires every push and the
+output guides the next iteration's plan.
 
 ### Step 6: Push with `--force-with-lease`
 
+Fetch and rebase first so we don't clobber maintainer-side commits, then
+hand off to the push wrapper:
+
 ```bash
+cd "$WORKDIR"
 git fetch origin "$BRANCH" 2>/dev/null || true
 git rebase "origin/$BRANCH" 2>/dev/null || true
-git push --force-with-lease origin "$BRANCH"
+
+${CLAUDE_PLUGIN_ROOT}/scripts/builder/push_force_with_lease.sh \
+  --branch "$BRANCH" --remote origin
 ```
 
-Never push to upstream. Always push to the fork (which is `origin` per the
-orchestrator's clone setup).
+`push_force_with_lease.sh` runs `git push --force-with-lease origin
+"$BRANCH"` from the current working directory, and HARD REFUSES
+(`exit 2`) any invocation with `--remote upstream`: fork-only push is not
+negotiable. `--force-with-lease` (never `--force`) keeps maintainer-side
+commits safe — if the remote ref moved unexpectedly while we were
+iterating, the push aborts instead of clobbering work.
 
 ### Step 7: Return build summary
 
