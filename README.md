@@ -4,6 +4,8 @@ Autonomous open-source contribution plugin for [Claude Code](https://claude.com/
 
 Ships a coordinated team of agents that picks an issue, profiles the repo, writes a plan, implements it, scores merge probability, iterates on the weakest dimension, and resolves review comments — all without hand-holding. State lives at `~/.superhuman/` and survives across sessions.
 
+> **v0.5.0** — bash extracted from agent prompts into versioned scripts under `scripts/`, JSON schemas formalised under `schemas/`, three new loop primitives: `/contribute`, `/repo-finder`, `/contribute-loop`. Safety prose (single-author rule, force-with-lease, suspicious-halt) stays inline in agent prompts where it belongs. No new plugin dependencies.
+
 ## What it does
 
 Run `Agent(subagent_type="opensource-contributor", ...)` (or `/contribution-fleet` for parallel runs) and the orchestrator will:
@@ -93,8 +95,11 @@ Orchestrator + 9 specialists + 1 shared-state contract document.
 
 | Command | Purpose |
 |---|---|
-| `/contribution-dashboard [owner/repo]` | Read-only view of active run, score history, plateaued dimensions, iteration cap, recent merge outcomes. |
+| `/contribute [owner/repo] [issue#]` | One full end-to-end contribution. Loopable. |
+| `/repo-finder [N]` | Refresh `repo-shortlist.json` with up to N candidate repos (default 10, max 25). |
+| `/contribute-loop [N]` | Run N sequential contributions (default 3, max 20). Stops on `suspicious_halt` or `crash`. |
 | `/contribution-fleet [N \| owner/repo ...]` | Launch N parallel contributor runs. |
+| `/contribution-dashboard [owner/repo]` | Read-only view of active run, score history, plateaued dimensions, iteration cap, recent merge outcomes, latest loop. |
 
 ## Structure
 
@@ -116,8 +121,20 @@ superhuman/
 │   ├── reviewer-dispatcher.md
 │   └── resolve-comments.md
 ├── commands/                 # Slash commands
+│   ├── contribute.md
+│   ├── contribute-loop.md
 │   ├── contribution-dashboard.md
-│   └── contribution-fleet.md
+│   ├── contribution-fleet.md
+│   └── repo-finder.md
+├── scripts/                  # Versioned shell extracted from agent prompts (v0.5.0+)
+│   ├── lib/                  # Shared helpers: state.sh, mistakes.sh, flake.sh, delim.sh
+│   ├── profiler/             # repo-profiler step implementations
+│   ├── scorer/               # merge-probability-scorer step implementations
+│   ├── orchestrator/         # opensource-contributor + reputation_gate.sh + write_run_summary.sh
+│   └── builder/              # ci_gate.sh, smoke_gate.sh, drift_linter.sh, push_force_with_lease.sh
+├── schemas/                  # JSON Schema (draft 2020-12) for every shared-state file (v0.5.0+)
+│   └── *.schema.json
+├── tests/                    # Bash unit tests for scripts/ — run via `bash tests/scripts/test_*.sh`
 └── skills/                   # (empty — this plugin exposes agents, not skills)
 ```
 
