@@ -62,39 +62,19 @@ and it is the single strongest filter — contributing to a repo that just
 rejected us damages our standing with that maintainer.
 
 ```bash
-GLOBAL_DIR="$HOME/.superhuman/global"
-BLOCKLIST="$GLOBAL_DIR/repo_blocklist.json"
-COOLDOWN="$GLOBAL_DIR/repo_cooldown.json"
-NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-
+# Canonical reputation gate (audit §14): blocklist + cooldown + active-
+# lock checks live in one script reused by repo-finder, the orchestrator's
+# Phase 0 eligibility check, and the contribution-fleet command. The
+# script reads $HOME/.superhuman/global/repo_blocklist.json and
+# repo_cooldown.json itself and prints SKIP/COOLDOWN/LOCKED reasons to
+# stderr; the caller only needs the exit code.
 reputation_gate() {
   local repo="$1"
-
-  # 1. Blocklist — user-authored; wins over everything.
-  if [ -f "$BLOCKLIST" ]; then
-    local hit
-    hit=$(jq -r --arg r "$repo" --arg now "$NOW" \
-      '.blocked[] | select(.repo == $r)
-         | select(.expires_at == null or .expires_at > $now)
-         | .reason' "$BLOCKLIST" 2>/dev/null)
-    [ -n "$hit" ] && { echo "SKIP (blocklist): $repo — $hit"; return 1; }
-  fi
-
-  # 2. Cooldown — scorer-derived; auto-expires.
-  if [ -f "$COOLDOWN" ]; then
-    local until triggers
-    until=$(jq -r --arg r "$repo" \
-      '.cooldowns[] | select(.repo == $r) | .cooldown_until // empty' \
-      "$COOLDOWN" 2>/dev/null)
-    if [ -n "$until" ] && [ "$until" \> "$NOW" ]; then
-      triggers=$(jq -r --arg r "$repo" \
-        '.cooldowns[] | select(.repo == $r) | .triggering_outcomes | join(",")' \
-        "$COOLDOWN")
-      echo "SKIP (cooldown until $until): $repo — $triggers"
-      return 1
-    fi
-  fi
-  return 0
+  "${CLAUDE_PLUGIN_ROOT}/scripts/orchestrator/reputation_gate.sh" \
+    --repo "$repo"
+  # exit 0 = eligible; 1 = blocklisted; 2 = cooldown; 3 = active lock.
+  # All three skip outcomes are equivalent here — caller drops the repo.
+  return $?
 }
 ```
 

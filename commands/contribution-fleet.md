@@ -70,40 +70,23 @@ orchestrator that will immediately abort. This is advisory; each
 dispatched orchestrator re-checks its own gate.
 
 ```bash
-NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-BLOCKLIST="$GLOBAL_DIR/repo_blocklist.json"
-COOLDOWN="$GLOBAL_DIR/repo_cooldown.json"
-
+# Audit §14: reputation gate (blocklist + cooldown + active-lock check)
+# is canonicalized in scripts/orchestrator/reputation_gate.sh. Both this
+# command and opensource-contributor Phase 0 call the same script. The
+# script prints SKIP/COOLDOWN/LOCKED reasons to stderr; we only need the
+# exit code. Per-run orchestrators re-check at dispatch time, so this
+# pre-flight pass is advisory — it just saves wasted dispatches.
 ELIGIBLE=()
 for repo in "${TARGETS[@]}"; do
-  skip=0
-  if [ -f "$BLOCKLIST" ]; then
-    REASON=$(jq -r --arg r "$repo" --arg now "$NOW" \
-      '.blocked[] | select(.repo == $r)
-         | select(.expires_at == null or .expires_at > $now)
-         | .reason' "$BLOCKLIST" 2>/dev/null)
-    [ -n "$REASON" ] && { echo "SKIP $repo (blocklist): $REASON"; skip=1; }
-  fi
-  if [ $skip -eq 0 ] && [ -f "$COOLDOWN" ]; then
-    UNTIL=$(jq -r --arg r "$repo" \
-      '.cooldowns[] | select(.repo == $r) | .cooldown_until // empty' \
-      "$COOLDOWN" 2>/dev/null)
-    if [ -n "$UNTIL" ] && [ "$UNTIL" \> "$NOW" ]; then
-      echo "SKIP $repo (cooldown until $UNTIL)"
-      skip=1
-    fi
-  fi
-  # Refuse to dispatch if a live lock is already held for this repo.
-  SLUG="${repo/\//-}"
-  CUR="$HOME/.superhuman/repos/$SLUG/current_contribution.json"
-  if [ $skip -eq 0 ] && [ -f "$CUR" ]; then
-    HOLDER=$(jq -r '.lock_holder // empty' "$CUR" 2>/dev/null)
-    if [ -n "$HOLDER" ] && [ "$HOLDER" != "null" ]; then
-      echo "SKIP $repo (lock held by: $HOLDER)"
-      skip=1
-    fi
-  fi
-  [ $skip -eq 0 ] && ELIGIBLE+=("$repo")
+  "${CLAUDE_PLUGIN_ROOT}/scripts/orchestrator/reputation_gate.sh" \
+    --repo "$repo"
+  case $? in
+    0) ELIGIBLE+=("$repo") ;;        # eligible — fleet-dispatch
+    1) ;;                             # blocklisted; reason printed
+    2) ;;                             # cooldown; until-date printed
+    3) ;;                             # lock held by another run
+    *) echo "SKIP $repo (reputation_gate.sh unexpected exit)" ;;
+  esac
 done
 
 if [ ${#ELIGIBLE[@]} -eq 0 ]; then
