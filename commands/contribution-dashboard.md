@@ -114,6 +114,32 @@ if [ -f "$GLOBAL" ]; then
 fi
 ```
 
+### Step 5.5: Most recent loop run
+
+`/contribute-loop` appends one JSON line per iteration to
+`~/.superhuman/global/loop_runs.jsonl`. We surface the most recent
+`loop_id` here so a user re-running the dashboard mid-loop can see
+progress, and so a halted loop's last state is visible without grepping
+files.
+
+```bash
+LOOP_LOG="$GLOBAL_DIR/loop_runs.jsonl"
+LOOP_TABLE=""
+LATEST_LOOP=""
+if [ -f "$LOOP_LOG" ]; then
+  # Tail-bound the scan so the dashboard stays fast even after months of
+  # loops. 100 lines covers ~5 N=20 loops.
+  LATEST_LOOP=$(tail -100 "$LOOP_LOG" | jq -r .loop_id 2>/dev/null \
+    | sort -u | tail -1)
+  if [ -n "$LATEST_LOOP" ]; then
+    LOOP_TABLE=$(jq -r --arg loop "$LATEST_LOOP" \
+      'select(.loop_id == $loop)
+       | [.iter, .repo, .outcome, (.pr_url // "—")] | @tsv' "$LOOP_LOG" \
+      | awk -F'\t' '{printf "  %-4s %-32s %-20s %s\n",$1,$2,$3,$4}')
+  fi
+fi
+```
+
 ### Step 6: Render
 
 Per-repo block (width cap ≤100 cols):
@@ -154,7 +180,20 @@ Cooldowns (active):
   merged    apache/airflow #65685   (4 iters)
   merged    django/django #17812    (2 iters)
   abandoned psf/requests #6644      (5 iters)
+
+═══ Latest loop: loop-20260520T093000Z ═══
+  iter repo                             outcome              pr
+  1    apache/airflow                   merge_ready          https://github.com/apache/airflow/pull/66010
+  2    django/django                    merged               https://github.com/django/django/pull/17812
+  3    psf/requests                     suspicious_halt      —
 ```
+
+If `loop_runs.jsonl` does not exist or has no entries, omit the latest-loop
+section entirely — there is nothing to render and an empty heading would
+clutter the output. The reputation and recent-outcomes sections still
+print their `  (none)` placeholder when empty, because those are always
+relevant; loop runs are only relevant when the user has actually run a
+loop.
 
 If a reputation section is empty, print `  (none)` rather than omitting
 the heading — the user needs to see an empty list is empty, not missing.
