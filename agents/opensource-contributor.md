@@ -57,32 +57,20 @@ Eligibility check (keep inline; not a full agent):
    outcomes, burns goodwill we cannot replace.
 
    ```bash
-   GLOBAL_DIR="$HOME/.superhuman/global"
-   BLOCKLIST="$GLOBAL_DIR/repo_blocklist.json"
-   COOLDOWN="$GLOBAL_DIR/repo_cooldown.json"
-   NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-
-   if [ -f "$BLOCKLIST" ]; then
-     REASON=$(jq -r --arg r "$OWNER_REPO" --arg now "$NOW" \
-       '.blocked[] | select(.repo == $r)
-          | select(.expires_at == null or .expires_at > $now)
-          | .reason' "$BLOCKLIST" 2>/dev/null)
-     [ -n "$REASON" ] && {
-       echo "ABORT (blocklist): $OWNER_REPO — $REASON"; exit 1; }
-   fi
-
-   if [ -f "$COOLDOWN" ]; then
-     UNTIL=$(jq -r --arg r "$OWNER_REPO" \
-       '.cooldowns[] | select(.repo == $r) | .cooldown_until // empty' \
-       "$COOLDOWN" 2>/dev/null)
-     if [ -n "$UNTIL" ] && [ "$UNTIL" \> "$NOW" ]; then
-       echo "ABORT (cooldown until $UNTIL): $OWNER_REPO"
-       echo "To override, remove the entry from $COOLDOWN or add this repo"
-       echo "explicitly to an allowlist (out of scope for v2)."
-       exit 1
-     fi
-   fi
+   "${CLAUDE_PLUGIN_ROOT}/scripts/orchestrator/reputation_gate.sh" \
+     --repo "$OWNER_REPO"
+   case $? in
+     0) ;;                               # eligible — proceed
+     1) exit 1 ;;                        # blocklisted (reason printed)
+     2) exit 1 ;;                        # cooldown (until printed)
+     3) exit 1 ;;                        # active lock by another run
+   esac
    ```
+
+   Audit §14: the same gate is invoked from `repo-finder` and the
+   `/contribution-fleet` command. One canonical implementation; behavioral
+   diff against the prior inline jq pipeline is empty across the four
+   exit-code cases.
 
 1. **AI-policy check.** `gh api "repos/$OWNER_REPO/contents/CONTRIBUTING.md"`
    (base64-decode). Grep for `AI-generated`, `LLM`, `no bots`, `Copilot
@@ -114,32 +102,17 @@ Eligibility check (keep inline; not a full agent):
 Runs once at session start, before claiming the lock. Keeps state files
 bounded so they don't drift into GC-worthy piles.
 
-#### Prune `mistakes.md` entries older than 90 days
+#### Prune `mistakes.md` entries older than 30 days
 
-`SHARED_STATE.md` declares that the orchestrator prunes this file — add the
-implementation. Each mistake section starts with `## <ISO8601> — <tag>`;
-keep only sections whose header is within the last 90 days.
+`SHARED_STATE.md` declares that the orchestrator prunes this file. Each
+mistake section starts with `## <ISO8601> tag=<tag> ...`; keep only
+sections whose header is within the last 30 days. The script preserves
+ordering and writes atomically (temp + rename) so the append-only
+contract is not broken.
 
 ```bash
-MISTAKES="$STATE_DIR/mistakes.md"
-if [ -f "$MISTAKES" ]; then
-  CUTOFF=$(date -u -v-90d +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
-           || date -u -d '90 days ago' +%Y-%m-%dT%H:%M:%SZ)
-  # Split into sections keyed by `^## ` headers; keep sections whose first
-  # line's ISO timestamp >= CUTOFF. Preserves ordering.
-  TMP="$MISTAKES.tmp.$$"
-  awk -v cutoff="$CUTOFF" '
-    /^## [0-9]{4}-[0-9]{2}-[0-9]{2}T/ {
-      # Extract ISO timestamp at position $2
-      ts = $2
-      keep = (ts >= cutoff)
-      if (keep) print
-      next
-    }
-    /^## / { keep = 0; print; next }   # non-dated header: keep (rare)
-    { if (keep || NR==1) print }
-  ' "$MISTAKES" > "$TMP" && mv "$TMP" "$MISTAKES"
-fi
+"${CLAUDE_PLUGIN_ROOT}/scripts/orchestrator/prune_mistakes.sh" \
+  --file "$STATE_DIR/mistakes.md" --max-age-days 30
 ```
 
 #### Initialize `run_telemetry.jsonl` pointer
@@ -320,16 +293,15 @@ profile-aware — it already matches `repo_profile.pr_title_format` and
 
 ### Phase 7: Iteration loop (adaptive cap)
 
-Compute the iteration cap from the initial diff size:
+Compute the iteration cap from the initial diff size. The 3/6/10 boundary
+rule (cap=3 if LOC≤50, 6 if ≤200, else 10) is encoded in the helper:
 
 ```bash
 LOC=$(git -C "$WORKDIR" diff --shortstat "$DEFAULT_BRANCH"...HEAD \
   | awk '{print $4+$6}')
 
-if   [ "$LOC" -lt 20 ];  then MAX_ITER=3
-elif [ "$LOC" -le 100 ]; then MAX_ITER=6
-else                         MAX_ITER=10
-fi
+MAX_ITER=$("${CLAUDE_PLUGIN_ROOT}/scripts/orchestrator/iteration_cap.sh" \
+  --loc "${LOC:-0}")
 
 jq --argjson m "$MAX_ITER" '.max_iterations=$m' "$CURRENT" > "$CURRENT.tmp" \
   && mv "$CURRENT.tmp" "$CURRENT"
@@ -413,21 +385,23 @@ If this run is part of a fleet dispatch (`$FLEET_ID` set by
 log so the launcher's Step 5 aggregator can render the summary table:
 
 ```bash
-if [ -n "$FLEET_ID" ]; then
-  FLEET_LOG="$HOME/.superhuman/global/fleet_runs.jsonl"
-  mkdir -p "$(dirname "$FLEET_LOG")"
-  jq -c -n \
-    --arg id "$FLEET_ID" \
-    --arg repo "$OWNER_REPO" \
-    --arg outcome "$OUTCOME" \
-    --argjson iters "${ITERATION:-0}" \
-    --arg pr "${PR_URL:-}" \
-    --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-    '{fleet_id:$id, repo:$repo, outcome:$outcome,
-      iterations:$iters,
-      pr_url:(if $pr == "" then null else $pr end),
-      completed_at:$ts}' \
-    >> "$FLEET_LOG"
+NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+# run_summary.json is THE single-source-of-truth for /contribute-loop:
+# it lands on EVERY terminal state including crash (audit §4). Fire it
+# from the EXIT trap as well as the normal Phase-8 path so a panic still
+# leaves a record. merge_outcomes.jsonl only records normal terminations
+# via the scorer's MODE=record_outcome dispatch.
+"${CLAUDE_PLUGIN_ROOT}/scripts/orchestrator/write_run_summary.sh" \
+  --repo "$OWNER_REPO" --outcome "$OUTCOME" \
+  --iterations "${ITERATION:-0}" --pr-url "${PR_URL:-}" \
+  --completed-at "$NOW" --exit-reason "${EXIT_REASON:-normal}"
+
+if [ -n "${FLEET_ID:-}" ]; then
+  "${CLAUDE_PLUGIN_ROOT}/scripts/orchestrator/append_fleet_log.sh" \
+    --fleet-id "$FLEET_ID" --repo "$OWNER_REPO" \
+    --outcome "$OUTCOME" --iterations "${ITERATION:-0}" \
+    --pr-url "${PR_URL:-}" --completed-at "$NOW"
 fi
 ```
 
