@@ -134,61 +134,17 @@ EOF
 esac
 ```
 
-The inline reference matrix below is kept only as documentation of the
-verdicts the auditor applies — the auditor is the authoritative source.
+For verdict classification on shared-function refactors, dispatch to
+`impact-auditor` (its verdict matrix is the authoritative source for every
+`(REFACTOR_KIND, context)` pair, and its caller-enumeration covers
+Python/JS/TS/Go/Rust/Java/Kotlin via the language-agnostic glob in
+`impact-auditor.md` Step 1). The builder does not duplicate that matrix
+here. The auditor writes `impact_audit.json` (verdict + suggested
+alternative + caller list + contexts_seen) at `$STATE_DIR/impact_audit.json`;
+downstream readers (reviewer-dispatcher, resolve-comments) consume that
+artifact directly.
 
-```bash
-TARGET="<fully qualified symbol from plan or finding>"
-SHORT_NAME="${TARGET##*.}"
-
-# List all callers
-git grep -n "\.${SHORT_NAME}\b\|\b${SHORT_NAME}(" -- ':*.py' ':*.js' ':*.ts' ':*.go' \
-  > /tmp/callers_raw.txt
-```
-
-Classify each caller's execution context. Context categories:
-
-- `flask_request` — inside a Flask view or request-scope handler
-- `flask_app_ctx` — wrapped in `with app.app_context():`
-- `fastapi_dependency` — FastAPI `Depends(...)` resolver
-- `fastapi_startup` — FastAPI `@app.on_event("startup")` / lifespan / middleware registration
-- `cli` — inside a click/typer/argparse command
-- `celery_task` — `@celery.task` / Airflow operator
-- `module_top_level` — runs at import time
-- `test` — inside `tests/` or `*_test.py`
-- `unknown` — cannot determine
-
-For each caller, answer: given the refactor in the plan, is this caller
-`safe_under_refactor: true|false`?
-
-Rules:
-- If refactor introduces `self.app.config.get(...)` or any call requiring
-  Flask app context → mark `flask_app_ctx`, `flask_request`, `celery_task`,
-  `test` as safe; mark `fastapi_startup`, `module_top_level`, `unknown` as
-  **unsafe**.
-- If refactor introduces a blocking network call → mark any async or startup
-  caller unsafe.
-- If the refactor is purely local (no context dependency) → all contexts safe.
-
-Write `caller_graph.json`:
-
-```bash
-CG=$(jq -n \
-  --arg repo "$OWNER_REPO" \
-  --argjson issue "$ISSUE_NUMBER" \
-  --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-  --arg target "$TARGET" \
-  --argjson callers "$CALLERS_JSON" \
-  --argjson contexts "$CONTEXTS_JSON" \
-  '{repo:$repo, issue_number:$issue, generated_at:$ts,
-    target_function:$target, callers:$callers, contexts_found:$contexts}')
-
-TMP="$STATE_DIR/caller_graph.json.tmp.$$"
-printf '%s' "$CG" | jq . > "$TMP" && mv "$TMP" "$STATE_DIR/caller_graph.json"
-```
-
-If ANY caller is unsafe, STOP. Do not apply the refactor. Return to the
-orchestrator with:
+If the verdict is `block`, return to the orchestrator:
 
 ```
 IMPACT_AUDIT_BLOCKED: <N> callers unsafe
