@@ -210,6 +210,18 @@ Allowed `phase` values: `repo-profiler`, `issue-selector`, `planner`,
 `builder:initial`, `builder:apply_findings`, `builder:apply_comments`,
 `scorer`, `reviewer-dispatcher`, `resolve-comments`.
 
+`mode` (required, enum): `inline` when the orchestrator executed the
+contract by reading the specialist's `.md` file and following it itself
+— this is the only path available when `opensource-contributor` runs as
+a subagent, since the Claude Code harness does not grant the `Agent`
+tool to spawned subagents. `dispatched` is reserved for a future
+top-level orchestrator (slash-command-driven) that can fan out to
+specialists via real `Agent` calls.
+
+The optional `subagent_id` field, when present, identifies the dispatched
+subagent's transcript; `inline` rows omit it. Today every row should be
+`mode=inline` and `subagent_id` should not appear.
+
 ### `flake_signatures.md` (cross-repo, append-only)
 
 Human-readable catalog of known CI flake patterns. One entry per signature:

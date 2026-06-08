@@ -5,7 +5,7 @@
   "description": "Single line of run_telemetry.jsonl. One record per phase-completion. Owner: any phase that calls emit_telemetry.",
   "type": "object",
   "additionalProperties": true,
-  "required": ["ts", "iteration", "phase", "duration_s", "outcome"],
+  "required": ["ts", "iteration", "phase", "duration_s", "outcome", "mode"],
   "properties": {
     "ts":          {"type": "string", "format": "date-time"},
     "iteration":   {"type": "integer"},
@@ -24,6 +24,15 @@
       ]
     },
     "duration_s":  {"type": "number"},
-    "outcome":     {"type": "string"}
+    "outcome":     {"type": "string"},
+    "mode": {
+      "type": "string",
+      "enum": ["inline", "dispatched"],
+      "description": "How the contract executed. 'inline' = orchestrator read the specialist .md and followed it itself (the only option when opensource-contributor runs as a subagent, since the Claude Code harness does not grant Agent to spawned subagents). 'dispatched' is reserved for a future top-level slash-command orchestrator that can fan out to specialists via real Agent calls."
+    },
+    "subagent_id": {
+      "type": "string",
+      "description": "Identifier for the dispatched subagent's transcript. Only present when mode=dispatched."
+    }
   }
 }
