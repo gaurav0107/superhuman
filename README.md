@@ -119,15 +119,36 @@ The agents shell out to standard developer tooling. Make sure these are on your 
 /reload-plugins
 ```
 
-## Codex configuration
+## Codex installation
 
 Codex support is declared in `.codex-plugin/plugin.json` and exposed through the `superhuman` skill in `skills/superhuman/SKILL.md`.
 
-For local development, install or link this repository as a Codex plugin using your normal Codex plugin workflow, then ask Codex to use the `superhuman` skill:
+There is no Codex marketplace command yet. Install manually by symlinking the skill into `~/.codex/skills/`:
+
+```
+git clone https://github.com/gaurav0107/superhuman ~/src/superhuman
+ln -s ~/src/superhuman/skills/superhuman ~/.codex/skills/superhuman
+```
+
+Then ask Codex to use the skill:
 
 ```
 Use the superhuman skill to find a good open-source repo and contribute.
 ```
+
+### Codex command equivalents
+
+Codex does not have slash commands. Use these prompts to invoke the same workflows the Claude Code commands trigger:
+
+| Claude Code command | Codex prompt |
+|---|---|
+| `/contribute` | `Use the superhuman skill to find a good open-source repo and contribute.` |
+| `/contribute owner/repo` | `Use the superhuman skill to contribute to owner/repo.` |
+| `/contribute owner/repo 123` | `Use the superhuman skill to contribute to owner/repo issue #123.` |
+| `/contribute-loop [N]` | `Use the superhuman skill to run N sequential contributions, stopping on suspicious_halt or crash.` |
+| `/contribution-fleet [N]` | Not supported in Codex — fleet runs require parallel subagent dispatch. Run sequential loops instead. |
+| `/contribution-dashboard [owner/repo]` | `Use the superhuman skill to show the contribution dashboard for owner/repo (or all repos if omitted).` |
+| `/repo-finder [N]` | `Use the superhuman skill to refresh my open-source repo shortlist with up to N candidates.` |
 
 ## Usage
 
