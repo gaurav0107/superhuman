@@ -245,7 +245,8 @@ superhuman/
 ├── schemas/                  # JSON Schema (draft 2020-12) for every shared-state file (v0.5.0+)
 │   └── *.schema.json
 ├── tests/                    # Bash unit tests for scripts/ — run via `bash tests/scripts/test_*.sh`
-└── skills/                   # Codex skill adapter for the shared workflow
+└── skills/
+    └── superhuman/SKILL.md   # Codex adapter — runs the shared workflow inline
 ```
 
 ## State layout

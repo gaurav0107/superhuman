@@ -68,12 +68,12 @@ bash tests/scripts/test_state.sh
 - [ ] New/changed scripts have tests.
 - [ ] Changed shared-state shapes update schema **and** test fixture together.
 - [ ] No safety rail weakened without explicit justification in the PR body.
-- [ ] If behavior changed meaningfully, `version` is bumped in **both** `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json` (they must match — they've drifted before), and `CHANGELOG.md` has an entry.
+- [ ] If behavior changed meaningfully, `version` is bumped in **all three** manifests — `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, and `.codex-plugin/plugin.json` (they must match — they've drifted before), and `CHANGELOG.md` has an entry.
 - [ ] Notable design decisions captured under `docs/` when warranted.
 
 ## Versioning & releases
 
-Versions follow [semver](https://semver.org/). The two manifests — `plugin.json` and `marketplace.json` — **must carry the same version**; a mismatch is a release bug (it happened in v0.4.1→v0.5.0). Add a dated, summarised entry to [CHANGELOG.md](./CHANGELOG.md) for every release.
+Versions follow [semver](https://semver.org/). The three manifests — `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, and `.codex-plugin/plugin.json` — **must carry the same version**; a mismatch is a release bug (it happened in v0.4.1→v0.5.0). Add a dated, summarised entry to [CHANGELOG.md](./CHANGELOG.md) for every release.
 
 ## Reporting bugs & requesting features
 
