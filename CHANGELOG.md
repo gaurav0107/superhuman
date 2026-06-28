@@ -4,6 +4,17 @@ All notable changes to **superhuman** are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/). The `version` field in `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json` must always match the latest released version here.
 
+## [0.7.0] — 2026-06-28
+
+### Added
+- **Codex runtime support.** New `.codex-plugin/plugin.json` manifest and `skills/superhuman/SKILL.md` adapter expose the full contribution workflow to Codex. Same `agents/`, `scripts/`, `schemas/` contracts; Codex executes them inline instead of via subagent dispatch.
+- **Concrete `superpowers:` fallback procedures** in `skills/superhuman/SKILL.md`. Codex users without the `superpowers` plugin get a 5-section structure for `writing-plans` (Context, Touch list, Implementation steps, Verification, Risks) and a 5-step execution loop for `subagent-driven-development` (read-edit-verify-recover-commit, escalate at 3 failures).
+- **Codex command-equivalent table** in README mapping every Claude Code slash command (`/contribute`, `/contribute-loop`, `/contribution-fleet`, `/contribution-dashboard`, `/repo-finder`) to a Codex prompt. Fleet is flagged unsupported since it requires parallel subagent dispatch Codex does not have.
+- **Concrete Codex install instructions** — clone + symlink into `~/.codex/skills/superhuman` instead of a hand-wave to "your normal Codex plugin workflow."
+
+### Changed
+- Plugin description and keywords updated across `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, and `.codex-plugin/plugin.json` to reflect dual-runtime support.
+
 ## [0.5.1] — 2026-06-08
 
 ### Fixed
