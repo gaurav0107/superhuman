@@ -1,7 +1,7 @@
 {
   "name": "superhuman",
   "description": "Autonomous open-source contribution workflow for Claude Code and Codex",
-  "version": "0.8.0",
+  "version": "0.7.1",
   "author": {
     "name": "gaurav0107"
   },

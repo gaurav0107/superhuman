@@ -3,7 +3,7 @@
 > A multi-agent **harness** that contributes merge-quality pull requests to real open-source projects — and a **closed feedback loop** that scores its own work and iterates until a maintainer would merge it. Runs on [Claude Code](https://claude.com/claude-code) and Codex.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-0.7.0-green.svg)](./CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.7.1-green.svg)](./CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/platform-Claude%20Code%20%7C%20Codex-8A2BE2.svg)](https://claude.com/claude-code)
 
 Most agent tools are **open-loop**: generate once, hope it's good. superhuman is **closed-loop**. It scores its own pull request before opening it, finds the single weakest dimension, spends an iteration fixing exactly that, re-scores, and repeats until it converges. It's gradient descent on one objective — *will a maintainer merge this?* — with a prior learned from every past outcome.

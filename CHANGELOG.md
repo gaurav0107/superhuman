@@ -4,7 +4,7 @@ All notable changes to **superhuman** are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/). The `version` field in `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, and `.codex-plugin/plugin.json` must always match the latest released version here.
 
-## [0.8.0] — 2026-07-03
+## [0.7.1] — 2026-07-03
 
 ### Changed
 - **Contributor identity is now derived from `gh`, not hard-coded.** The single-author safety rail is unchanged — every commit is still authored by exactly one identity with no co-author trailers or AI attribution — but that identity is now the `gh`-authenticated GitHub user running the plugin (`agents/builder.md` Step 3, `agents/opensource-contributor.md` Phase 0). Anyone who installs the plugin contributes under their own name instead of a hard-coded maintainer. When GitHub hides the account email, the pin falls back to the `ID+login@users.noreply.github.com` privacy address, which still attributes commits on GitHub. Both agents now guard with `gh auth status` and surface `GH_AUTH_MISSING` instead of committing as the wrong person; the post-commit author-verification compares against the derived identity.
