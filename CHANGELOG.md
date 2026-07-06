@@ -4,6 +4,11 @@ All notable changes to **superhuman** are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/). The `version` field in `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, and `.codex-plugin/plugin.json` must always match the latest released version here.
 
+## [Unreleased]
+
+### Added
+- **One-command installer (`install.sh`).** Installs superhuman **and its dependent plugins** — `superpowers` (required) and `everything-claude-code` / ECC (recommended) — in a single command via the Claude Code CLI (`claude plugin marketplace add` / `plugin install`). Idempotent and re-runnable; checks prerequisites (`git`/`gh`/`jq`/`python3` + `gh auth`), and falls back to printing the manual slash-commands when the `claude` CLI isn't on `PATH`. Flags: `--skip-ecc`, `--codex` (clone + symlink the Codex skill), `--dry-run`. Usage: `curl -fsSL https://raw.githubusercontent.com/gaurav0107/superhuman/main/install.sh | bash`. Covered by `tests/scripts/test_install.sh`; README **Installation** section leads with it.
+
 ## [0.6.2] — 2026-07-06
 
 ### Added

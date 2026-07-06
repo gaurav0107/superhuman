@@ -107,11 +107,38 @@ The agents shell out to standard developer tooling. Make sure these are on your 
 
 > **GitHub auth matters.** `gh` needs to fork repos and push to your fork. The agents never push to upstream and never use plain `--force`. See [Safety rails](#safety-rails).
 
-## Claude Code installation
+## Installation
+
+### One command (recommended)
+
+Installs **superhuman and its dependent plugins** — `superpowers` (required) and `everything-claude-code` / ECC (recommended) — in one shot via the Claude Code CLI:
+
+```
+curl -fsSL https://raw.githubusercontent.com/gaurav0107/superhuman/main/install.sh | bash
+```
+
+The script checks prerequisites, adds each marketplace, and installs all three plugins (idempotent — safe to re-run). Options:
+
+| Flag | Effect |
+|---|---|
+| `--skip-ecc` | Skip `everything-claude-code` (the optional reviewer plugin). |
+| `--codex` | Also install for Codex (clone repo + symlink the skill). |
+| `--dry-run` | Print the commands without running them. |
+
+Prefer to inspect first? `curl -fsSL .../install.sh -o install.sh && bash install.sh --dry-run`.
+
+After it finishes, restart Claude Code (or run `/reload-plugins`).
+
+### Manual (Claude Code)
+
+If you'd rather run the plugin commands yourself inside Claude Code:
 
 ```
 /plugin marketplace add https://github.com/obra/superpowers
 /plugin install superpowers@superpowers
+
+/plugin marketplace add https://github.com/affaan-m/everything-claude-code
+/plugin install everything-claude-code@everything-claude-code
 
 /plugin marketplace add https://github.com/gaurav0107/superhuman
 /plugin install superhuman@superhuman
@@ -119,7 +146,7 @@ The agents shell out to standard developer tooling. Make sure these are on your 
 /reload-plugins
 ```
 
-## Codex installation
+### Codex
 
 Codex support is declared in `.codex-plugin/plugin.json` and exposed through the `superhuman` skill in `skills/superhuman/SKILL.md`.
 
@@ -214,6 +241,7 @@ Orchestrator + 10 specialists + 1 shared-state contract document.
 ```
 superhuman/
 ├── README.md  CHANGELOG.md  CONTRIBUTING.md  SECURITY.md  LICENSE
+├── install.sh                # One-command installer (superhuman + dependent plugins)
 ├── .claude-plugin/
 │   ├── plugin.json           # Plugin manifest + requires.plugins declarations
 │   └── marketplace.json      # Marketplace catalog entry
@@ -328,7 +356,7 @@ A self-evaluation from the `merge-probability-scorer` agent — a critic with a 
 Yes. The same agent contracts, scripts, and schemas run under both. Claude Code loads them as subagents and slash commands; Codex runs them inline via `skills/superhuman/SKILL.md`. See [Supported runtimes](#supported-runtimes).
 
 **How do I install it?**
-For Claude Code: `/plugin marketplace add https://github.com/gaurav0107/superhuman` then `/plugin install superhuman@superhuman`. For Codex: clone the repo and symlink `skills/superhuman` into `~/.codex/skills/`. Full steps in [Claude Code installation](#claude-code-installation) and [Codex installation](#codex-installation).
+One command: `curl -fsSL https://raw.githubusercontent.com/gaurav0107/superhuman/main/install.sh | bash` — it installs superhuman plus its dependent plugins (`superpowers`, `everything-claude-code`). For Codex, add `--codex` (or clone the repo and symlink `skills/superhuman` into `~/.codex/skills/`). Full steps and the manual command list in [Installation](#installation).
 
 **Does it learn over time?**
 Yes. Every merged or abandoned PR appends to `~/.superhuman/global/merge_outcomes.jsonl`, which calibrates the scorer's historical-signal dimension, and the `lesson-distiller` mines reviewer feedback into typed rule cards. Each run carries a better prior into the next repo than it had on the last one.
