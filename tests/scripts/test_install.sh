@@ -21,18 +21,18 @@ export CLAUDE_BIN="$tmpdir/bin/claude"
 # --- default run: all three plugins present -----------------------------------
 out=$(HOME="$tmpdir" bash "$INSTALL" --dry-run 2>&1)
 
-echo "$out" | grep -q 'marketplace add https://github.com/obra/superpowers' \
+echo "$out" | grep -q 'marketplace add https://github.com/obra/superpowers-marketplace' \
   || { echo "FAIL: superpowers marketplace missing"; exit 1; }
-echo "$out" | grep -q 'plugin install superpowers@superpowers' \
+echo "$out" | grep -q 'plugin install superpowers@superpowers-marketplace' \
   || { echo "FAIL: superpowers install missing"; exit 1; }
-echo "$out" | grep -q 'plugin install everything-claude-code@everything-claude-code' \
+echo "$out" | grep -q 'plugin install ecc@ecc' \
   || { echo "FAIL: ECC install missing"; exit 1; }
 echo "$out" | grep -q 'plugin install superhuman@superhuman' \
   || { echo "FAIL: superhuman install missing"; exit 1; }
 
 # --- --skip-ecc: ECC omitted, others still present ----------------------------
 out_skip=$(HOME="$tmpdir" bash "$INSTALL" --dry-run --skip-ecc 2>&1)
-if echo "$out_skip" | grep -q 'plugin install everything-claude-code@'; then
+if echo "$out_skip" | grep -q 'plugin install ecc@'; then
   echo "FAIL: --skip-ecc still installed ECC"; exit 1
 fi
 echo "$out_skip" | grep -q 'plugin install superhuman@superhuman' \

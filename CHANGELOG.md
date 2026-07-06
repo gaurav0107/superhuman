@@ -9,6 +9,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Added
 - **One-command installer (`install.sh`).** Installs superhuman **and its dependent plugins** — `superpowers` (required) and `everything-claude-code` / ECC (recommended) — in a single command via the Claude Code CLI (`claude plugin marketplace add` / `plugin install`). Idempotent and re-runnable; checks prerequisites (`git`/`gh`/`jq`/`python3` + `gh auth`), and falls back to printing the manual slash-commands when the `claude` CLI isn't on `PATH`. Flags: `--skip-ecc`, `--codex` (clone + symlink the Codex skill), `--dry-run`. Usage: `curl -fsSL https://raw.githubusercontent.com/gaurav0107/superhuman/main/install.sh | bash`. Covered by `tests/scripts/test_install.sh`; README **Installation** section leads with it.
 
+### Fixed
+- **Installer used the wrong marketplace/plugin IDs**, so both dependency installs failed (`Plugin "superpowers" not found in marketplace "superpowers"`, and likewise for ECC). The marketplace name comes from each repo's `marketplace.json`, not the repo slug. Corrected to the verified IDs: `superpowers@superpowers-marketplace` (via `obra/superpowers-marketplace`) and `ecc@ecc` (via `affaan-m/everything-claude-code`). Added a bare-plugin-name retry so a future marketplace rename self-heals instead of hard-failing. README manual commands updated to match.
+
 ## [0.6.2] — 2026-07-06
 
 ### Added
