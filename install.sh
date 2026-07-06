@@ -98,10 +98,12 @@ check_prereqs() {
 
 # --- claude plugin install ----------------------------------------------------
 # Each entry: "<marketplace source>|<plugin@marketplace>|<label>"
-# Sources match README and the known-good marketplace URLs.
+# The marketplace NAME (right of @) comes from each repo's marketplace.json —
+# it is NOT the repo slug (superpowers-marketplace's is "superpowers-marketplace",
+# ECC's is "ecc"). Verified against the live marketplace.json files.
 PLUGINS=(
-  "https://github.com/obra/superpowers|superpowers@superpowers|superpowers (required)"
-  "https://github.com/affaan-m/everything-claude-code|everything-claude-code@everything-claude-code|everything-claude-code / ECC (recommended)"
+  "https://github.com/obra/superpowers-marketplace|superpowers@superpowers-marketplace|superpowers (required)"
+  "https://github.com/affaan-m/everything-claude-code|ecc@ecc|everything-claude-code / ECC (recommended)"
   "https://github.com/gaurav0107/superhuman|superhuman@superhuman|superhuman"
 )
 
@@ -111,7 +113,7 @@ install_claude_plugins() {
     warn "Install Claude Code, then re-run this script, or run these inside Claude Code:"
     for entry in "${PLUGINS[@]}"; do
       IFS='|' read -r src plugin label <<<"$entry"
-      [ "$SKIP_ECC" = "1" ] && [[ "$plugin" == everything-claude-code@* ]] && continue
+      [ "$SKIP_ECC" = "1" ] && [[ "$plugin" == ecc@* ]] && continue
       printf '    /plugin marketplace add %s\n' "$src"
       printf '    /plugin install %s\n' "$plugin"
     done
@@ -121,7 +123,7 @@ install_claude_plugins() {
   info "Installing Claude Code plugins via ${BOLD}$CLAUDE_BIN${RESET}"
   for entry in "${PLUGINS[@]}"; do
     IFS='|' read -r src plugin label <<<"$entry"
-    if [ "$SKIP_ECC" = "1" ] && [[ "$plugin" == everything-claude-code@* ]]; then
+    if [ "$SKIP_ECC" = "1" ] && [[ "$plugin" == ecc@* ]]; then
       warn "Skipping $label (--skip-ecc)"
       continue
     fi
@@ -131,6 +133,10 @@ install_claude_plugins() {
     run "$CLAUDE_BIN" plugin marketplace add "$src" || warn "marketplace add returned non-zero (already added?) — continuing"
     if run "$CLAUDE_BIN" plugin install "$plugin"; then
       ok "$plugin"
+    elif run "$CLAUDE_BIN" plugin install "${plugin%@*}"; then
+      # Self-heal if the marketplace was renamed: install by bare plugin name,
+      # letting the CLI resolve it across all known marketplaces.
+      ok "${plugin%@*} (resolved without marketplace pin)"
     else
       err "failed to install $plugin"
       [[ "$plugin" == superpowers@* ]] && err "superpowers is REQUIRED — superhuman's planner/builder will fail without it."

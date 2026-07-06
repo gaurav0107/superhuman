@@ -134,11 +134,11 @@ After it finishes, restart Claude Code (or run `/reload-plugins`).
 If you'd rather run the plugin commands yourself inside Claude Code:
 
 ```
-/plugin marketplace add https://github.com/obra/superpowers
-/plugin install superpowers@superpowers
+/plugin marketplace add https://github.com/obra/superpowers-marketplace
+/plugin install superpowers@superpowers-marketplace
 
 /plugin marketplace add https://github.com/affaan-m/everything-claude-code
-/plugin install everything-claude-code@everything-claude-code
+/plugin install ecc@ecc
 
 /plugin marketplace add https://github.com/gaurav0107/superhuman
 /plugin install superhuman@superhuman
