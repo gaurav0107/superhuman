@@ -1,0 +1,81 @@
+name: tests
+
+# Runs the bash unit suite in tests/scripts/ on every PR and every push to main.
+# CONTRIBUTING.md calls a green suite a pre-PR requirement, but nothing enforced
+# it — a script could ship red (e.g. a jq program that aborts on every input) and
+# no gate would notice. This workflow is that gate.
+#
+# Both OSes on purpose: macOS ships `jq-1.7.1-apple` and bash 3.2, which is where
+# most contributors actually run this plugin, and where jq-precedence and BSD
+# tool differences surface that ubuntu's GNU stack hides.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  suite:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install test dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          # jsonschema exercises the real validate_json path (state.sh falls back
+          # to a jq required-field check without it; CI should test the strict one).
+          python3 -m pip install --quiet jsonschema
+          # jq, gh, and mikefarah yq are preinstalled on GitHub runners; install
+          # only if the image ever drops one, so the suite never fails on a
+          # missing tool instead of a real defect.
+          command -v jq >/dev/null || { echo "::error::jq missing"; exit 1; }
+          command -v gh >/dev/null || echo "::warning::gh not found (only tests that shell out to it are affected)"
+          if ! command -v yq >/dev/null; then
+            if [ "${RUNNER_OS}" = "macOS" ]; then brew install yq; else sudo snap install yq; fi
+          fi
+          # macOS has no GNU `timeout` (scripts/builder/smoke_gate.sh needs it);
+          # coreutils provides it. Add gnubin so it resolves as `timeout`.
+          if [ "${RUNNER_OS}" = "macOS" ] && ! command -v timeout >/dev/null; then
+            brew install coreutils
+            echo "$(brew --prefix)/opt/coreutils/libexec/gnubin" >> "$GITHUB_PATH"
+          fi
+          echo "jq=$(jq --version) yq=$(yq --version) python=$(python3 --version)"
+
+      - name: Run bash unit suite
+        shell: bash
+        env:
+          CLAUDE_PLUGIN_ROOT: ${{ github.workspace }}
+        run: |
+          set -uo pipefail
+          shopt -s nullglob
+          fails=0 total=0
+          for t in tests/scripts/test_*.sh; do
+            total=$((total + 1))
+            if out=$(bash "$t" 2>&1); then
+              echo "PASS ${t##*/}"
+            else
+              fails=$((fails + 1))
+              echo "::error title=${t##*/}::test failed"
+              printf '%s\n' "$out" | sed 's/^/    /'
+            fi
+          done
+          echo "----------------------------------------"
+          echo "ran $total test(s), $fails failed"
+          [ "$fails" -eq 0 ]

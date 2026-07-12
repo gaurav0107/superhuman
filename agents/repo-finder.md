@@ -408,8 +408,16 @@ fi
 # Pure function of $ISSUES and $MAINTAINERS — no API calls. Issues failing the
 # age or triage-signal gate produce no output; every later rejection carries a
 # reason. See scripts/orchestrator/triage_filter.sh.
-"${CLAUDE_PLUGIN_ROOT}/scripts/orchestrator/triage_filter.sh" \
-  --issues "$ISSUES" --maintainers "$MAINTAINERS" > "$SCRATCH/stage_a_all.jsonl"
+#
+# Check the exit code. The filter's errors (10 = config, or any nonzero from a jq
+# abort on unexpected data) are NOT verdicts: jq streams `.[]`, so a mid-run crash
+# leaves a TRUNCATED file that reads as a clean, shorter candidate set — the exact
+# failure this file exists to prevent. Abort instead of trusting it.
+if ! "${CLAUDE_PLUGIN_ROOT}/scripts/orchestrator/triage_filter.sh" \
+     --issues "$ISSUES" --maintainers "$MAINTAINERS" > "$SCRATCH/stage_a_all.jsonl"; then
+  echo "FATAL: triage_filter.sh failed — Stage A output is unreliable, aborting." >&2
+  exit 10
+fi
 
 # Surface the skips, then carry only the survivors into Stage B.
 jq -r 'select(.verdict == "SKIP") | "SKIP \(.number): \(.reason)"' "$SCRATCH/stage_a_all.jsonl"

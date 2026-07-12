@@ -53,14 +53,17 @@ jq -c --rawfile m "$MAINTAINERS" --argjson now "$NOW" '
 
   # Engagement is not endorsement: a maintainer explaining why something is not a
   # bug is indistinguishable, to the triage gate, from one blessing it.
-  | "by design|working as intended|works as intended|not a bug|isn.t a bug"
+  # Parens are load-bearing: `A + B as $x | rest` binds as `A + (B as $x | rest)`,
+  # so an unparenthesized concat spills the string into the downstream object
+  # stream and jq aborts ("string and object cannot be added") on every issue.
+  | ("by design|working as intended|works as intended|not a bug|isn.t a bug"
   + "|don.t think (that )?this is a bug|expected behaviou?r|this is expected"
-  + "|won.t fix|wontfix|out of scope|not something we|we don.t plan"       as $declined
+  + "|won.t fix|wontfix|out of scope|not something we|we don.t plan")       as $declined
 
   # A maintainer who already holds the patch will land theirs, not ours.
-  | "patch locally|i have a (fix|patch)|i.ll (fix|push|open|submit)"
+  | ("patch locally|i have a (fix|patch)|i.ll (fix|push|open|submit)"
   + "|i.m working on|working on (a fix|this)|already fixed in"
-  + "|(fix|pr) (is )?incoming"                                             as $claimed
+  + "|(fix|pr) (is )?incoming")                                             as $claimed
 
   # Announcements and containers wear defect labels. A pinned "the project moved"
   # notice earns a maintainer taxonomy label and every engagement signal the gate
