@@ -16,7 +16,12 @@ FRESH="2026-07-11T18:00:00Z" # 6 hours old  — must be dropped
 RECENT="2026-07-10T00:00:00Z" # 2 days old  — a claim this fresh is still live
 STALE="2026-05-20T00:00:00Z"  # 53 days old — a claim this old is abandoned
 
-printf 'unionlead\n' > "$tmpdir/maintainers.txt"
+printf 'unionlead\ndefactolead\n' > "$tmpdir/maintainers.txt"
+
+# De facto maintainers: authored a large share of the recent merged PRs, but
+# GitHub reports them as CONTRIBUTOR (private org membership, or a lead who was
+# never added to the org). A strict subset of the 3c union.
+printf 'defactolead\n' > "$tmpdir/defacto.txt"
 
 cat > "$tmpdir/issues.json" <<EOF
 [
@@ -63,6 +68,11 @@ cat > "$tmpdir/issues.json" <<EOF
    "createdAt": "$OLD", "assignees": [], "labels": [{"name": "bug"}],
    "comments": [{"authorAssociation": "CONTRIBUTOR", "author": {"login": "unionlead"},
      "body": "Confirmed, happy to review a fix.", "createdAt": "$OLD"}]},
+
+  {"number": 927, "title": "De facto lead confirmed this one",
+   "createdAt": "$OLD", "assignees": [], "labels": [{"name": "bug"}],
+   "comments": [{"authorAssociation": "CONTRIBUTOR", "author": {"login": "defactolead"},
+     "body": "Confirmed, I can reproduce this on main.", "createdAt": "$OLD"}]},
 
   {"number": 905, "title": "Too fresh to have been triaged", "createdAt": "$FRESH",
    "assignees": [], "labels": [{"name": "good first issue"}], "comments": []},
@@ -191,7 +201,8 @@ cat > "$tmpdir/issues.json" <<EOF
 EOF
 
 OUT="$tmpdir/out.jsonl"
-"$FILTER" --issues "$tmpdir/issues.json" --maintainers "$tmpdir/maintainers.txt" --now "$NOW" > "$OUT"
+"$FILTER" --issues "$tmpdir/issues.json" --maintainers "$tmpdir/maintainers.txt" \
+  --defacto "$tmpdir/defacto.txt" --now "$NOW" > "$OUT"
 
 verdict() { jq -r --argjson n "$1" 'select(.number == $n) | .verdict' "$OUT"; }
 reason()  { jq -r --argjson n "$1" 'select(.number == $n) | .reason'  "$OUT"; }
@@ -356,8 +367,19 @@ want 916 KEEP "stale claim is abandoned, not competing"
 want 917 KEEP "bare link is not a defect signal"
 [ "$(field 917 maintainer_signal)" = "none" ] || { echo "FAIL #917 signal: got '$(field 917 maintainer_signal)'"; exit 1; }
 
-# A union-only lead still earns no signal, whatever they wrote.
+# A union-only lead still earns no signal, whatever they wrote. Commit rank is
+# not authority: the 3c union is deliberately wide so the fortress check errs
+# toward skipping, and reading endorsement off it would grade any prolific
+# committer as a maintainer.
 [ "$(field 904 maintainer_signal)" = "none" ] || { echo "FAIL #904 signal: got '$(field 904 maintainer_signal)'"; exit 1; }
+
+# A de facto lead is graded. They are in the union too, so the association-only
+# rule above would silently discard the strongest signal the repo has, which is
+# how a repo led by a long-term contributor outside the org scores `none` on an
+# issue its lead confirmed.
+want 927 KEEP "de facto lead confirmed"
+[ "$(field 927 maintainer_signal)" = "confirms" ] || { echo "FAIL #927 signal: got '$(field 927 maintainer_signal)'"; exit 1; }
+[ "$(field 927 maintainer_comment_assoc)" = "false" ] || { echo "FAIL #927 assoc must stay false"; exit 1; }
 
 # The strongest signal is also the shortest one anyone writes. A prose floor
 # applied before the match would grade this as no signal at all.

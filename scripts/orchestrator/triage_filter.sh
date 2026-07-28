@@ -25,11 +25,12 @@ set -euo pipefail
 
 die() { echo "FATAL: $*" >&2; exit 10; }
 
-ISSUES="" MAINTAINERS="" NOW=""
+ISSUES="" MAINTAINERS="" DEFACTO="" NOW=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --issues)      [ $# -ge 2 ] || die "--issues needs a value"; ISSUES="$2"; shift 2 ;;
     --maintainers) [ $# -ge 2 ] || die "--maintainers needs a value"; MAINTAINERS="$2"; shift 2 ;;
+    --defacto)     [ $# -ge 2 ] || die "--defacto needs a value"; DEFACTO="$2"; shift 2 ;;
     --now)         [ $# -ge 2 ] || die "--now needs a value"; NOW="$2"; shift 2 ;;
     *)             die "unknown argument: $1" ;;
   esac
@@ -39,6 +40,10 @@ done
 [ -n "$MAINTAINERS" ] || die "--maintainers is required"
 [ -f "$ISSUES" ]      || die "issues file not found: $ISSUES"
 [ -f "$MAINTAINERS" ] || die "maintainers file not found: $MAINTAINERS"
+# Optional: callers predating the de facto tier pass no list, and an absent list
+# reads as empty, which restores the association-only behaviour exactly.
+[ -n "$DEFACTO" ] && { [ -f "$DEFACTO" ] || die "defacto file not found: $DEFACTO"; }
+[ -n "$DEFACTO" ] || DEFACTO=/dev/null
 command -v jq >/dev/null 2>&1 || die "jq is required"
 
 # Injectable clock so the 24h rule is testable against a fixed fixture.
@@ -47,8 +52,11 @@ case "$NOW" in (*[!0-9]*) die "--now must be a unix timestamp";; esac
 
 # Regexes use `.` where an apostrophe belongs (don.t, I.ll): this jq program is a
 # single-quoted shell string and cannot contain one.
-jq -c --rawfile m "$MAINTAINERS" --argjson now "$NOW" '
+jq -c --rawfile m "$MAINTAINERS" --rawfile d "$DEFACTO" --argjson now "$NOW" '
   ($m | rtrimstr("\n") | split("\n") | map(select(. != ""))) as $maint
+  # De facto maintainers: a strict subset of $maint, admitted to grading because
+  # they demonstrably lead the repo. See the caller for how the set is built.
+  | ($d | rtrimstr("\n") | split("\n") | map(select(. != ""))) as $defacto
 
   # Bots are not maintainers. Superset of the 3c bot regex: a repo whose CI bot
   # files, labels and comments its own issues yields a perfect triage signal on
@@ -136,13 +144,25 @@ jq -c --rawfile m "$MAINTAINERS" --argjson now "$NOW" '
   | ($human | map(select(
       .authorAssociation | IN("OWNER","MEMBER","COLLABORATOR")
     )))                                                                    as $mca
+
+  # Grading set, deliberately distinct from both sets above. Association is the
+  # primary key, but it reports *public* org membership only, so a private member
+  # or a lead never added to the org arrives as CONTRIBUTOR and their confirmation
+  # is discarded. $defacto restores exactly those. It is not the $maint union:
+  # commit rank is not authority, and grading off the union would score any
+  # prolific committer as a maintainer, which is the distinction PR #25 drew.
+  # $mca stays association-only because maintainer_comment_assoc reports it.
+  | ($human | map(select(
+      (.authorAssociation | IN("OWNER","MEMBER","COLLABORATOR"))
+      or (.author.login as $a | $defacto | index($a))
+    )))                                                                    as $mgrade
   | ($i.labels | map(.name | ascii_downcase))                              as $L
   | ($mc | map(.body // "") | join("\n") | ascii_downcase)                 as $mbody
 
   # Grade only what is left after stripping links and bare @mentions: a comment
   # that is only a pointer somewhere else states no position on this issue, and no
   # sentiment tier can read one.
-  | ($mca | map((.body // "")
+  | ($mgrade | map((.body // "")
                 | ascii_downcase
                 | gsub("https?://\\S+"; " ")
                 | gsub("@[a-z0-9_-]+"; " ")
