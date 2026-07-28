@@ -54,8 +54,14 @@ case "$NOW" in (*[!0-9]*) die "--now must be a unix timestamp";; esac
 # single-quoted shell string and cannot contain one.
 jq -c --rawfile m "$MAINTAINERS" --rawfile d "$DEFACTO" --argjson now "$NOW" '
   ($m | rtrimstr("\n") | split("\n") | map(select(. != ""))) as $maint
-  # De facto maintainers: a strict subset of $maint, admitted to grading because
-  # they demonstrably lead the repo. See the caller for how the set is built.
+  # De facto maintainers: narrower than $maint by intent, admitted to grading
+  # because they demonstrably lead the repo. See the caller for how it is built.
+  # Narrower by intent is not narrower by construction: $maint ranks contributors
+  # by ALL-TIME commits, so a lead who joined recently can clear 5 of the last 20
+  # merged PRs and still sit outside the top 25 — and the association legs of
+  # $maint cannot catch them either, since under-reported association is the whole
+  # reason they are here. So $defacto is unioned into $mc below rather than
+  # assumed to be inside it.
   | ($d | rtrimstr("\n") | split("\n") | map(select(. != ""))) as $defacto
 
   # Bots are not maintainers. Superset of the 3c bot regex: a repo whose CI bot
@@ -137,9 +143,16 @@ jq -c --rawfile m "$MAINTAINERS" --rawfile d "$DEFACTO" --argjson now "$NOW" '
   # `// ""` guards ghost authors: a deleted account serializes as `author: null`,
   # and `null | test(...)` throws, aborting the whole batch.
   | ($i.comments | map(select((.author.login // "") | test($bots) | not))) as $human
+  # $defacto belongs here, not only in $mgrade. This set drives the triage gate,
+  # `maintainer_commented` and `last_maintainer_comment`. Grading a de facto lead
+  # who is outside $maint while leaving them out of $mc drops the issue at the
+  # gate unless a label rescues it — the exact silent discard this tier exists to
+  # fix — and any issue that a label does rescue emits the contradiction
+  # `maintainer_commented: false` beside `maintainer_signal: confirms`.
   | ($human | map(select(
       (.authorAssociation | IN("OWNER","MEMBER","COLLABORATOR"))
       or (.author.login as $a | $maint | index($a))
+      or (.author.login as $a | $defacto | index($a))
     )))                                                                    as $mc
   | ($human | map(select(
       .authorAssociation | IN("OWNER","MEMBER","COLLABORATOR")
