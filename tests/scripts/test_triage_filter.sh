@@ -16,7 +16,18 @@ FRESH="2026-07-11T18:00:00Z" # 6 hours old  — must be dropped
 RECENT="2026-07-10T00:00:00Z" # 2 days old  — a claim this fresh is still live
 STALE="2026-05-20T00:00:00Z"  # 53 days old — a claim this old is abandoned
 
-printf 'unionlead\n' > "$tmpdir/maintainers.txt"
+printf 'unionlead\ndefactolead\n' > "$tmpdir/maintainers.txt"
+
+# De facto maintainers: authored a large share of the recent merged PRs, but
+# GitHub reports them as CONTRIBUTOR (private org membership, or a lead who was
+# never added to the org).
+#
+# Two of them, because containment in the 3c union is an intent and not a
+# guarantee: `defactolead` is in the union, `outsidelead` is not. The union ranks
+# contributors by ALL-TIME commits, so a lead who joined recently clears 5 of the
+# last 20 merged PRs while sitting outside the top 25, and association cannot
+# catch them either — under-reported association is why they are in this file.
+printf 'defactolead\noutsidelead\n' > "$tmpdir/defacto.txt"
 
 cat > "$tmpdir/issues.json" <<EOF
 [
@@ -63,6 +74,16 @@ cat > "$tmpdir/issues.json" <<EOF
    "createdAt": "$OLD", "assignees": [], "labels": [{"name": "bug"}],
    "comments": [{"authorAssociation": "CONTRIBUTOR", "author": {"login": "unionlead"},
      "body": "Confirmed, happy to review a fix.", "createdAt": "$OLD"}]},
+
+  {"number": 927, "title": "De facto lead confirmed this one",
+   "createdAt": "$OLD", "assignees": [], "labels": [{"name": "bug"}],
+   "comments": [{"authorAssociation": "CONTRIBUTOR", "author": {"login": "defactolead"},
+     "body": "Confirmed, I can reproduce this on main.", "createdAt": "$OLD"}]},
+
+  {"number": 928, "title": "De facto lead outside the union confirmed this one",
+   "createdAt": "$OLD", "assignees": [], "labels": [{"name": "bug"}],
+   "comments": [{"authorAssociation": "CONTRIBUTOR", "author": {"login": "outsidelead"},
+     "body": "Confirmed, I can reproduce this on main.", "createdAt": "$OLD"}]},
 
   {"number": 905, "title": "Too fresh to have been triaged", "createdAt": "$FRESH",
    "assignees": [], "labels": [{"name": "good first issue"}], "comments": []},
@@ -191,7 +212,8 @@ cat > "$tmpdir/issues.json" <<EOF
 EOF
 
 OUT="$tmpdir/out.jsonl"
-"$FILTER" --issues "$tmpdir/issues.json" --maintainers "$tmpdir/maintainers.txt" --now "$NOW" > "$OUT"
+"$FILTER" --issues "$tmpdir/issues.json" --maintainers "$tmpdir/maintainers.txt" \
+  --defacto "$tmpdir/defacto.txt" --now "$NOW" > "$OUT"
 
 verdict() { jq -r --argjson n "$1" 'select(.number == $n) | .verdict' "$OUT"; }
 reason()  { jq -r --argjson n "$1" 'select(.number == $n) | .reason'  "$OUT"; }
@@ -356,8 +378,33 @@ want 916 KEEP "stale claim is abandoned, not competing"
 want 917 KEEP "bare link is not a defect signal"
 [ "$(field 917 maintainer_signal)" = "none" ] || { echo "FAIL #917 signal: got '$(field 917 maintainer_signal)'"; exit 1; }
 
-# A union-only lead still earns no signal, whatever they wrote.
+# A union-only lead still earns no signal, whatever they wrote. Commit rank is
+# not authority: the 3c union is deliberately wide so the fortress check errs
+# toward skipping, and reading endorsement off it would grade any prolific
+# committer as a maintainer.
 [ "$(field 904 maintainer_signal)" = "none" ] || { echo "FAIL #904 signal: got '$(field 904 maintainer_signal)'"; exit 1; }
+
+# A de facto lead is graded. They are in the union too, so the association-only
+# rule above would silently discard the strongest signal the repo has, which is
+# how a repo led by a long-term contributor outside the org scores `none` on an
+# issue its lead confirmed.
+want 927 KEEP "de facto lead confirmed"
+[ "$(field 927 maintainer_signal)" = "confirms" ] || { echo "FAIL #927 signal: got '$(field 927 maintainer_signal)'"; exit 1; }
+[ "$(field 927 maintainer_comment_assoc)" = "false" ] || { echo "FAIL #927 assoc must stay false"; exit 1; }
+
+# The same lead, outside the union. Grading alone is not enough: the triage gate,
+# `maintainer_commented` and `last_maintainer_comment` all read the $mc set, so a
+# de facto lead admitted to grading but not to $mc leaves this issue with no
+# maintainer comment on record — it fails the gate and never reaches the ranker,
+# which is the discard this tier exists to fix. `bug` is deliberately the only
+# label: a good-first-issue label would rescue the issue at the gate and hide the
+# defect behind a KEEP that reads `maintainer_commented: false` next to
+# `maintainer_signal: confirms`.
+want 928 KEEP "de facto lead outside the union still counts as a maintainer comment"
+[ "$(field 928 maintainer_signal)" = "confirms" ] || { echo "FAIL #928 signal: got '$(field 928 maintainer_signal)'"; exit 1; }
+[ "$(field 928 maintainer_commented)" = "true" ] || { echo "FAIL #928 must record a maintainer comment"; exit 1; }
+[ "$(field 928 maintainer_comment_assoc)" = "false" ] || { echo "FAIL #928 assoc must stay false"; exit 1; }
+[ "$(field 928 last_maintainer_comment)" = "$OLD" ] || { echo "FAIL #928 last_maintainer_comment: got '$(field 928 last_maintainer_comment)'"; exit 1; }
 
 # The strongest signal is also the shortest one anyone writes. A prose floor
 # applied before the match would grade this as no signal at all.
@@ -390,5 +437,25 @@ want 925 KEEP "asking about an issue is not claiming it"
 # ...and the anchor must not narrow so far that a real claim slips through.
 want 926 SKIP "anchored outsider claim still skips"
 want_reason 926 claimed
+
+# --defacto is optional, and an absent list must restore association-only
+# behaviour exactly — callers predating this tier pass no list at all. Asserted,
+# not diffed by hand: the whole tier is opt-in, and an /dev/null default that
+# quietly changed a verdict would be a regression nothing else here can see.
+OUT_LEGACY="$tmpdir/out_legacy.jsonl"
+"$FILTER" --issues "$tmpdir/issues.json" --maintainers "$tmpdir/maintainers.txt" \
+  --now "$NOW" > "$OUT_LEGACY"
+legacy() { jq -r --argjson n "$1" "select(.number == \$n) | .$2" "$OUT_LEGACY"; }
+
+# 927's author is in the union, so the issue still clears the gate — but with no
+# list to lift them past association, the signal they earned above is gone.
+[ "$(legacy 927 maintainer_signal)" = "none" ] || { echo "FAIL legacy #927 signal: got '$(legacy 927 maintainer_signal)'"; exit 1; }
+# 928's author is in neither set without the list, so the issue is not a
+# candidate at all. This is the pre-fix behaviour, reproduced exactly.
+[ -z "$(legacy 928 verdict)" ] || { echo "FAIL legacy #928: must fail the gate, got '$(legacy 928 verdict)'"; exit 1; }
+# Every issue that does not turn on the de facto tier must be byte-identical.
+diff <(grep -Ev '"number":(927|928)[,}]' "$OUT") \
+     <(grep -Ev '"number":(927|928)[,}]' "$OUT_LEGACY") \
+  || { echo "FAIL: --defacto changed a verdict it must not touch"; exit 1; }
 
 echo "OK test_triage_filter.sh"

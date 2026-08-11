@@ -601,6 +601,48 @@ fi
 
 
 ```bash
+# De facto maintainers, for --defacto. Association reports PUBLIC org membership
+# only, so a private member or a lead never added to the org comments as
+# CONTRIBUTOR and their confirmation is discarded. These are the people who
+# demonstrably lead the repo: >=5 of the last 20 merged PRs, bots excluded.
+#
+# 5, not 3: measured across 18 Go and AI repos, the non-bot distribution has a
+# clean gap there. 6 authors sit at 5-15 of 20 and every one is an insider whose
+# association under-reports; below the gap, 13 authors sit at exactly 3 and are
+# ordinary contributors. A cutoff of 3 admits 23 authors and re-creates the
+# commit-rank error PR #25 fixed.
+#
+# $BOT_NAMES is a first pass only. It misses handles like `...-cherrypick-robot`,
+# where `bot` is not a whole word. That is safe: the filter's own bot regex is a
+# superset (`bot$` catches it) and runs before grading, so a bot that survives
+# here is dropped there and can never be graded.
+#
+# Both filters run inside jq. `grep -ivE "$BOT_NAMES"` exits 1 when it matches
+# nothing, and matching nothing is the ordinary case here — most repos have no
+# bot above the threshold — so the pipeline could not tell an empty-but-correct
+# result from a jq that died, and `|| :` turned both into "no de facto
+# maintainers". Empty is a valid answer; a failure to compute one is not, and
+# only jq's own exit code separates them.
+#
+# `// empty` drops ghost authors: a deleted account serializes as `author: null`,
+# which `.author.login` yields as null and five of which would group into a
+# literal `null` maintainer. Same guard as 3c, same reason.
+#
+# An unset $BOT_NAMES would make `test("")` match every login and empty the set
+# in silence — the failure mode this tier exists to remove. Assert it instead.
+#
+# Reuses $MERGED_PRS from 3a. No extra API calls.
+: "${BOT_NAMES:?BOT_NAMES is unset — define it (3d) before deriving de facto maintainers}"
+DEFACTO="$SCRATCH/defacto.txt"
+if ! jq -r --arg bots "$BOT_NAMES" '
+       [ .[].author.login // empty ]
+       | group_by(.) | map(select(length >= 5) | .[0])
+       | .[] | select(test($bots; "i") | not)
+     ' "$MERGED_PRS" > "$DEFACTO"; then
+  echo "FATAL: could not derive de facto maintainers from $MERGED_PRS" >&2
+  exit 10
+fi
+
 # Pure function of $ISSUES and $MAINTAINERS — no API calls. Issues failing the
 # age or triage-signal gate produce no output; every later rejection carries a
 # reason. See scripts/orchestrator/triage_filter.sh.
@@ -610,7 +652,7 @@ fi
 # leaves a TRUNCATED file that reads as a clean, shorter candidate set — the exact
 # failure this file exists to prevent. Abort instead of trusting it.
 if ! "${CLAUDE_PLUGIN_ROOT}/scripts/orchestrator/triage_filter.sh" \
-     --issues "$ISSUES" --maintainers "$MAINTAINERS" > "$SCRATCH/stage_a_all.jsonl"; then
+     --issues "$ISSUES" --maintainers "$MAINTAINERS" --defacto "$DEFACTO" > "$SCRATCH/stage_a_all.jsonl"; then
   echo "FATAL: triage_filter.sh failed — Stage A output is unreliable, aborting." >&2
   exit 10
 fi
@@ -751,7 +793,7 @@ visibly drop one. Apply the prose here, then say in `notes` that it did.
 - **Is a bug** (not a feature request): +3
 - **Has reproduction steps**: +2
 - **Labeled good-first-issue or help-wanted**: +2
-- **Maintainer signal**, graded from `maintainer_signal`: `invites_pr` **+5** · `confirms` **+3** · `neutral` **+1** · `none` **0**. Association is the prerequisite, never the grade — a union-only commenter earns nothing here.
+- **Maintainer signal**, graded from `maintainer_signal`: `invites_pr` **+5** · `confirms` **+3** · `neutral` **+1** · `none` **0**. Gradeable means association **or** de facto membership (>=5 of the last 20 merged PRs, bots excluded) — never the grade itself, which the comment text sets. The de facto tier exists because association reports public org membership only and under-reports exactly those leads. The 3c union stays ungraded: a union-only commenter earns nothing here, because commit rank is not authority.
 - **Maintainer engaged within the last 28 days**: +2
 - **Issue age**, graded: 2–30d **+1** · 30–90d **0** · 90–365d **−1** · >365d **−2**. Scored, never hard-skipped — old is riskier, not worthless.
 - **Scope is small** (likely < 100 lines, single-file fix): +2
