@@ -207,7 +207,74 @@ cat > "$tmpdir/issues.json" <<EOF
    "createdAt": "$OLD", "assignees": [], "labels": [{"name": "kind:bug"}],
    "comments": [{"authorAssociation": "NONE", "author": {"login": "eager-newcomer"},
      "body": "Can I pick up this one? Happy to send a patch.",
-     "createdAt": "$RECENT"}]}
+     "createdAt": "$RECENT"}]},
+
+  {"number": 929, "title": "Parser drops the last byte",
+   "createdAt": "$OLD", "assignees": [], "labels": [{"name": "bug"}],
+   "comments": [{"authorAssociation": "MEMBER", "author": {"login": "maint-0"},
+     "body": "Your approach makes sense to me.", "createdAt": "$OLD"}]},
+
+  {"number": 930, "title": "Parser drops the last byte",
+   "createdAt": "$OLD", "assignees": [], "labels": [{"name": "bug"}],
+   "comments": [{"authorAssociation": "MEMBER", "author": {"login": "maint-0"},
+     "body": "You're right about the proposed design.", "createdAt": "$OLD"}]},
+
+  {"number": 931, "title": "Parser drops the last byte",
+   "createdAt": "$OLD", "assignees": [], "labels": [{"name": "bug"}],
+   "comments": [{"authorAssociation": "MEMBER", "author": {"login": "maint-0"},
+     "body": "Good catch!", "createdAt": "$OLD"}]},
+
+  {"number": 932, "title": "Parser drops the last byte",
+   "createdAt": "$OLD", "assignees": [], "labels": [{"name": "bug"}],
+   "comments": [{"authorAssociation": "MEMBER", "author": {"login": "maint-0"},
+     "body": "Nice find.", "createdAt": "$OLD"}]},
+
+  {"number": 933, "title": "Parser drops the last byte",
+   "createdAt": "$OLD", "assignees": [], "labels": [{"name": "bug"}],
+   "comments": [{"authorAssociation": "MEMBER", "author": {"login": "maint-0"},
+     "body": "Good catch. Reproduced on main; the parser drops the last byte.", "createdAt": "$OLD"}]},
+
+  {"number": 934, "title": "Parser drops the last byte",
+   "createdAt": "$OLD", "assignees": [], "labels": [{"name": "bug"}],
+   "comments": [{"authorAssociation": "MEMBER", "author": {"login": "maint-0"},
+     "body": "Good catch. PRs welcome!", "createdAt": "$OLD"}]},
+
+  {"number": 935, "title": "Parser drops the last byte",
+   "createdAt": "$OLD", "assignees": [], "labels": [{"name": "bug"}],
+   "comments": [{"authorAssociation": "MEMBER", "author": {"login": "maint-0"},
+     "body": "Your approach makes sense to me.", "createdAt": "$OLD"},
+     {"authorAssociation": "MEMBER", "author": {"login": "maint-1"},
+     "body": "Reproduced on main; the parser drops the last byte.", "createdAt": "$OLD"}]},
+
+  {"number": 936, "title": "Parser drops the last byte",
+   "createdAt": "$OLD", "assignees": [], "labels": [{"name": "bug"}],
+   "comments": [{"authorAssociation": "MEMBER", "author": {"login": "maint-0"},
+     "body": "  False flag.  ", "createdAt": "$OLD"}]},
+
+  {"number": 937, "title": "Parser drops the last byte",
+   "createdAt": "$OLD", "assignees": [], "labels": [{"name": "bug"}],
+   "comments": [{"authorAssociation": "MEMBER", "author": {"login": "maint-0"},
+     "body": "Not a false flag.", "createdAt": "$OLD"}]},
+
+  {"number": 938, "title": "Parser drops the last byte",
+   "createdAt": "$OLD", "assignees": [], "labels": [{"name": "bug"}],
+   "comments": [{"authorAssociation": "MEMBER", "author": {"login": "maint-0"},
+     "body": "Could this be a false flag?", "createdAt": "$OLD"}]},
+
+  {"number": 939, "title": "Parser drops the last byte",
+   "createdAt": "$OLD", "assignees": [], "labels": [{"name": "bug"}],
+   "comments": [{"authorAssociation": "MEMBER", "author": {"login": "maint-0"},
+     "body": "The detector emits false flags.", "createdAt": "$OLD"}]},
+
+  {"number": 940, "title": "Parser drops the last byte",
+   "createdAt": "$OLD", "assignees": [], "labels": [{"name": "bug"}],
+   "comments": [{"authorAssociation": "MEMBER", "author": {"login": "maint-0"},
+     "body": "False flag", "createdAt": "$OLD"}]},
+
+  {"number": 941, "title": "Parser drops the last byte",
+   "createdAt": "$OLD", "assignees": [], "labels": [{"name": "bug"}],
+   "comments": [{"authorAssociation": "MEMBER", "author": {"login": "maint-0"},
+     "body": "I think it makes sense.", "createdAt": "$OLD"}]}
 ]
 EOF
 
@@ -437,6 +504,27 @@ want 925 KEEP "asking about an issue is not claiming it"
 # ...and the anchor must not narrow so far that a real claim slips through.
 want 926 SKIP "anchored outsider claim still skips"
 want_reason 926 claimed
+
+# Generic agreement can endorse someone else's approach without confirming a
+# defect (#33). Keep the existing neutral/none floor and independent positives.
+for entry in "929 neutral" "930 neutral" "931 none" "932 none" \
+             "933 confirms" "934 invites_pr" "935 confirms" "941 neutral"; do
+  read -r number expected <<< "$entry"
+  want "$number" KEEP "agreement regression/control"
+  got=$(field "$number" maintainer_signal)
+  [ "$got" = "$expected" ] || { echo "FAIL #$number signal: want $expected, got '$got'"; exit 1; }
+done
+
+# Only an entire, unambiguous false-flag dismissal triggers the new decline.
+for number in 936 940; do
+  want "$number" SKIP "standalone false flag"
+  want_reason "$number" declined
+done
+for number in 937 938 939; do
+  want "$number" KEEP "false flag negation/question/description"
+  [ "$(field "$number" maintainer_signal)" = "neutral" ] \
+    || { echo "FAIL #$number false-flag control signal"; exit 1; }
+done
 
 # --defacto is optional, and an absent list must restore association-only
 # behaviour exactly — callers predating this tier pass no list at all. Asserted,

@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+- Issue triage no longer grades generic agreement such as "makes sense to me" or "good catch" as defect confirmation by itself. A standalone "False flag" maintainer comment now counts as a dismissal, while negations and questions retain their existing verdicts. Explicit reproduction and PR invitations keep their signal tiers. These are conservative lexical corrections for #33; ambiguous reply targets still require semantic review.
+
 ## [0.6.8] — 2026-08-11
 
 ## [0.6.7] — 2026-07-21
