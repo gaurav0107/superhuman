@@ -237,7 +237,7 @@ jq -c --rawfile m "$MAINTAINERS" --rawfile d "$DEFACTO" --argjson now "$NOW" '
     # negation, quotation or description of a detector producing false flags.
     elif ($mbody | test($declined))
          or ($mc | any((.body // "") | ascii_downcase
-                       | test("^\\s*false flag[.!]?\\s*$"))) then
+                       | test("^\\s*false\\s+flag[.!]?\\s*$"))) then
       {verdict: "SKIP", number: $i.number,
        reason: "maintainer declined it"}
     elif ($mbody | test($claimed)) then

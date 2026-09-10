@@ -274,7 +274,42 @@ cat > "$tmpdir/issues.json" <<EOF
   {"number": 941, "title": "Parser drops the last byte",
    "createdAt": "$OLD", "assignees": [], "labels": [{"name": "bug"}],
    "comments": [{"authorAssociation": "MEMBER", "author": {"login": "maint-0"},
-     "body": "I think it makes sense.", "createdAt": "$OLD"}]}
+     "body": "I think it makes sense.", "createdAt": "$OLD"}]},
+
+  {"number": 942, "title": "Parser drops the last byte",
+   "createdAt": "$OLD", "assignees": [], "labels": [{"name": "bug"}],
+   "comments": [{"authorAssociation": "MEMBER", "author": {"login": "maint-0"},
+     "body": "False  flag", "createdAt": "$OLD"}]},
+
+  {"number": 943, "title": "Parser drops the last byte",
+   "createdAt": "$OLD", "assignees": [], "labels": [{"name": "bug"}],
+   "comments": [{"authorAssociation": "MEMBER", "author": {"login": "maint-0"},
+     "body": "False\nflag", "createdAt": "$OLD"}]},
+
+  {"number": 944, "title": "Parser drops the last byte",
+   "createdAt": "$OLD", "assignees": [], "labels": [{"name": "bug"}],
+   "comments": [{"authorAssociation": "MEMBER", "author": {"login": "maint-0"},
+     "body": "False\tflag!", "createdAt": "$OLD"}]},
+
+  {"number": 945, "title": "Parser drops the last byte",
+   "createdAt": "$OLD", "assignees": [], "labels": [{"name": "bug"}],
+   "comments": [{"authorAssociation": "MEMBER", "author": {"login": "maint-0"},
+     "body": "\tFALSE \r\nflag.\n", "createdAt": "$OLD"}]},
+
+  {"number": 946, "title": "Parser drops the last byte",
+   "createdAt": "$OLD", "assignees": [], "labels": [{"name": "bug"}],
+   "comments": [{"authorAssociation": "MEMBER", "author": {"login": "maint-0"},
+     "body": "Falseflag", "createdAt": "$OLD"}]},
+
+  {"number": 947, "title": "Parser drops the last byte",
+   "createdAt": "$OLD", "assignees": [], "labels": [{"name": "bug"}],
+   "comments": [{"authorAssociation": "MEMBER", "author": {"login": "maint-0"},
+     "body": "Could this be a false\nflag?", "createdAt": "$OLD"}]},
+
+  {"number": 948, "title": "Parser drops the last byte",
+   "createdAt": "$OLD", "assignees": [], "labels": [{"name": "bug"}],
+   "comments": [{"authorAssociation": "MEMBER", "author": {"login": "maint-0"},
+     "body": "Quoted text:\nFalse flag", "createdAt": "$OLD"}]}
 ]
 EOF
 
@@ -516,15 +551,19 @@ for entry in "929 neutral" "930 neutral" "931 none" "932 none" \
 done
 
 # Only an entire, unambiguous false-flag dismissal triggers the new decline.
-for number in 936 940; do
+# Spaces, tabs and newlines between the words do not change the dismissal.
+for number in 936 940 942 943 944 945; do
   want "$number" SKIP "standalone false flag"
   want_reason "$number" declined
 done
-for number in 937 938 939; do
+for number in 937 938 939 947 948; do
   want "$number" KEEP "false flag negation/question/description"
   [ "$(field "$number" maintainer_signal)" = "neutral" ] \
     || { echo "FAIL #$number false-flag control signal"; exit 1; }
 done
+
+# The words must still be separated by whitespace.
+want 946 KEEP "falseflag without a separator is not a dismissal"
 
 # --defacto is optional, and an absent list must restore association-only
 # behaviour exactly — callers predating this tier pass no list at all. Asserted,
