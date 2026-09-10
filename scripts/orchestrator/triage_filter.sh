@@ -115,8 +115,10 @@ jq -c --rawfile m "$MAINTAINERS" --rawfile d "$DEFACTO" --argjson now "$NOW" '
   | ("prs? (are )?welcome|welcome a (pr|patch)|happy to (review|take a pr|accept)"
   + "|feel free to (submit|open|send)|would (accept|welcome) a (pr|patch)"
   + "|go ahead and (open|submit)|contributions? welcome")                 as $invites
-  | ("reproduc|confirmed|i see the same|can confirm|this is (valid|a bug|indeed)"
-  + "|good catch|you.re right|nice find|makes sense to me")               as $confirms
+  # Generic agreement may endorse a proposed approach rather than
+  # confirm the reported defect. Leave it at the neutral/none floor unless an
+  # independent reproduction, confirmation or PR invitation supplies the signal.
+  | "reproduc|confirmed|i see the same|can confirm|this is (valid|a bug|indeed)" as $confirms
   # A maintainer who could not reproduce is stating the opposite of a confirmation,
   # and the `reproduc` stem cannot tell the two apart. Not a decline either — the
   # report may still be sound — so these phrases are deleted from the graded text
@@ -231,7 +233,11 @@ jq -c --rawfile m "$MAINTAINERS" --rawfile d "$DEFACTO" --argjson now "$NOW" '
     elif ($i.title | test($secproc; "i")) then
       {verdict: "SKIP", number: $i.number,
        reason: "security-report process complaint — answered by an advisory, not a PR"}
-    elif ($mbody | test($declined)) then
+    # Match a standalone dismissal per comment, not a mention in a question,
+    # negation, quotation or description of a detector producing false flags.
+    elif ($mbody | test($declined))
+         or ($mc | any((.body // "") | ascii_downcase
+                       | test("^\\s*false\\s+flag[.!]?\\s*$"))) then
       {verdict: "SKIP", number: $i.number,
        reason: "maintainer declined it"}
     elif ($mbody | test($claimed)) then
