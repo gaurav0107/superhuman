@@ -2,13 +2,24 @@
 
 > A multi-agent **harness** that contributes merge-quality pull requests to real open-source projects — and a **closed feedback loop** that scores its own work and iterates until a maintainer would merge it. Runs on [Claude Code](https://claude.com/claude-code) and Codex.
 
+[![GitHub stars](https://img.shields.io/github/stars/gaurav0107/superhuman?style=social)](https://github.com/gaurav0107/superhuman/stargazers)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-0.6.2-green.svg)](./CHANGELOG.md)
+[![Release](https://img.shields.io/github/v/release/gaurav0107/superhuman?color=green)](https://github.com/gaurav0107/superhuman/releases)
+[![Tests](https://github.com/gaurav0107/superhuman/actions/workflows/tests.yml/badge.svg)](https://github.com/gaurav0107/superhuman/actions/workflows/tests.yml)
 [![Platform](https://img.shields.io/badge/platform-Claude%20Code%20%7C%20Codex-8A2BE2.svg)](https://claude.com/claude-code)
+[![Website](https://img.shields.io/badge/site-superhuman--oss.com-F0B429)](https://superhuman-oss.com)
 
 Most agent tools are **open-loop**: generate once, hope it's good. superhuman is **closed-loop**. It scores its own pull request before opening it, finds the single weakest dimension, spends an iteration fixing exactly that, re-scores, and repeats until it converges. It's gradient descent on one objective — *will a maintainer merge this?* — with a prior learned from every past outcome.
 
 A coordinated team of agents picks an issue, profiles the repo, plans, builds, scores merge probability, iterates on the weakest dimension, and resolves review comments — autonomously. State lives at `~/.superhuman/` and survives across sessions.
+
+## Track record
+
+**259 PRs opened · 115 merged · 46 repos** — open-source repos with 1,000+ stars, since April 2026 (as of 2026-11-17).
+
+Merged into [Deno](https://github.com/denoland/deno/pull/36321), [ClickHouse](https://github.com/ClickHouse/ClickHouse/pull/106916), [Envoy](https://github.com/envoyproxy/envoy/pull/45510), [Keycloak](https://github.com/keycloak/keycloak/pull/50809), [Apache Superset](https://github.com/apache/superset/pull/42489), [MLflow](https://github.com/mlflow/mlflow/pull/23488), [LlamaIndex](https://github.com/run-llama/llama_index/pull/21891), [Gitea](https://github.com/go-gitea/gitea/pull/38479), [Starship](https://github.com/starship/starship/pull/7497), [Pydantic AI](https://github.com/pydantic/pydantic-ai/pull/5681), [Oxc](https://github.com/oxc-project/oxc/pull/22752), [Unsloth](https://github.com/unslothai/unsloth/pull/7113), [Tesseract](https://github.com/tesseract-ocr/tesseract/pull/4563), [Ant Design](https://github.com/ant-design/ant-design/pull/58241), and more.
+
+If superhuman is useful to you, a ⭐ helps other contributors find it.
 
 ## Proven on
 
@@ -59,7 +70,7 @@ Four ideas make the loop converge instead of wander:
 1. **Self-evaluation before submission.** `merge-probability-scorer` is a critic with a 10-dimension weighted rubric — correctness, tests, style, PR format, process compliance, scope, docs, commit hygiene, risk, and historical signal. The agent grades its own work the way a maintainer would, *before* spending the maintainer's attention.
 2. **Targeted iteration, not random polish.** Each round, `reviewer-dispatcher` picks the single **weakest non-plateaued dimension** and routes it to the matching language specialist (python / go / ts / java / kotlin / rust / cpp / csharp / flutter / security). Effort goes where it moves the score most. Plateau detection stops the loop from grinding a dimension that won't improve.
 3. **Bounded compute, real convergence.** The loop stops at **95% merge probability sustained over two consecutive runs**, and the iteration budget is **capped adaptively by diff size** (3 / 6 / 10). It terminates — by quality or by budget — every time.
-4. **A prior that learns.** Every merged or abandoned PR appends to `~/.superhuman/global/merge_outcomes.jsonl`, which calibrates the scorer's historical-signal dimension. The system carries a better prior into the next repo than it had on the last one.
+4. **A prior that learns.** Every run appends to `~/.superhuman/global/merge_outcomes.jsonl`, and `/contribution-sweep` later records whether each PR was actually merged or closed. Those outcomes calibrate the scorer's historical-signal dimension. The system carries a better prior into the next repo than it had on the last one.
 
 ## The harness
 
@@ -67,73 +78,57 @@ A loop that opens PRs into other people's repos, unattended, is only safe if the
 
 - **Contracts, not vibes.** [`agents/SHARED_STATE.md`](./agents/SHARED_STATE.md) is a single source of truth for who writes each state file and who reads it — a concurrency contract that lets parallel runs share `~/.superhuman/` without corrupting it.
 - **Typed state.** Every shared-state file has a [JSON Schema](./schemas/) (draft 2020-12), validated at write time. State is data with a shape, not a free-for-all.
-- **Behavior split from shell.** Reasoning and safety prose live in agent prompts (`agents/*.md`); the deterministic `bash`/`jq` lives in versioned, unit-tested [`scripts/`](./scripts). 51 bash tests cover the scripts and every schema.
+- **Behavior split from shell.** Reasoning and safety prose live in agent prompts (`agents/*.md`); the deterministic `bash`/`jq` lives in versioned, unit-tested [`scripts/`](./scripts). Bash unit tests cover every script and schema, on macOS and Linux CI.
 - **Blast-radius auditing.** `impact-auditor` runs before any refactor to a shared function — it blocks the class of change that's correct in one execution context (Flask request time) and fatal in another (FastAPI startup).
 - **Hard safety rails.** Allowlisted CI commands only, `--force-with-lease` to a fork (never upstream, never plain `--force`), and a prompt-injection halt on any review comment that tries to make the agent run shell or fetch external URLs. See [Safety rails](#safety-rails).
 
 Orchestrator + 10 specialists + 1 shared-state contract. The orchestrator is thin: it owns the lock, sequences the phases, and enforces the cap and the threshold. The intelligence is in the specialists and the loop.
 
-## Supported runtimes
-
-| Runtime | Entry point | Notes |
-|---|---|---|
-| Claude Code | `.claude-plugin/` | Loads `agents/` as subagents and `commands/` as slash commands. |
-| Codex | `.codex-plugin/` | Loads `skills/superhuman/SKILL.md`, which adapts the same `agents/`, `scripts/`, and `schemas/` contracts for inline execution. |
-
-Claude Code can dispatch `Agent(subagent_type=...)` calls. Codex executes the same agent contracts inline by reading the referenced files under `agents/`.
-
-## Required plugins
-
-This plugin depends on skills and agents from other plugins.
-
-| Plugin | Status | Why |
-|---|---|---|
-| [`superpowers`](https://github.com/obra/superpowers) | **Required** | `planner` invokes `superpowers:writing-plans`; `builder` invokes `superpowers:subagent-driven-development`. Without it, both agents fail with `PluginMissingError`. |
-| `everything-claude-code` | Recommended | `reviewer-dispatcher` routes to language-specialist reviewers. Falls back to inline prompts via `AgentNotFoundError` rescue if missing, but review quality drops. |
-
-Declared for Claude Code in `.claude-plugin/plugin.json` under `requires.plugins`. Codex uses `skills/superhuman/SKILL.md` as the adapter and falls back to inline planning/execution when Claude-specific plugin skills are unavailable.
-
-## Prerequisites
-
-The agents shell out to standard developer tooling. Make sure these are on your `PATH`:
-
-| Tool | Used for | Install |
-|---|---|---|
-| [`gh`](https://cli.github.com/) | Cloning forks, opening PRs, reading issues and review comments. Must be authenticated (`gh auth login`) with a token that can fork and push. | `brew install gh` |
-| `git` | Branching, committing, `--force-with-lease` pushes to your fork. Configure `user.name`/`user.email` — commits are authored as you. | preinstalled / `brew install git` |
-| [`jq`](https://jqlang.github.io/jq/) | All shared-state JSON reads/writes under `~/.superhuman/`. | `brew install jq` |
-| `python3` | JSON Schema validation of shared-state files. | preinstalled / `brew install python` |
-| `flock` (Linux) | Fleet mutex so parallel runs can't clobber each other's state. macOS uses a directory-based fallback automatically. | preinstalled |
-
-> **GitHub auth matters.** `gh` needs to fork repos and push to your fork. The agents never push to upstream and never use plain `--force`. See [Safety rails](#safety-rails).
-
 ## Installation
 
-### One command (recommended)
+### Requirements
 
-Installs **superhuman and its dependent plugins** — `superpowers` (required) and `everything-claude-code` / ECC (recommended) — in one shot via the Claude Code CLI:
+| Requirement | Why | Install |
+|---|---|---|
+| [Claude Code](https://claude.com/claude-code) or Codex | The runtime the agents run in. | See the Claude Code / Codex docs |
+| [`gh`](https://cli.github.com/), authenticated | Forks repos, opens PRs, reads issues and reviews. Run `gh auth login` before your first contribution. | `brew install gh` |
+| `git` | Branches, commits, `--force-with-lease` pushes to your fork. Commits are authored as you. | preinstalled / `brew install git` |
+| [`jq`](https://jqlang.github.io/jq/) | Every read and write of the state under `~/.superhuman/`. | `brew install jq` |
+| `python3` + `jsonschema` | Validates state files against their schemas. The installer adds `jsonschema` for you. | preinstalled / `python3 -m pip install jsonschema` |
+| [`superpowers`](https://github.com/obra/superpowers) plugin | **Required.** `planner` and `builder` call its skills and fail with `PluginMissingError` without it. | Installed by `install.sh` |
+| `everything-claude-code` (ECC) plugin | Recommended. Language-specialist reviewers; without it review falls back to inline prompts and quality drops. | Installed by `install.sh` (skip with `--skip-ecc`) |
 
-```
+Supported on **macOS and Linux** (both CI-tested). On Windows, use WSL2 (not CI-tested).
+
+> **Your GitHub account opens the PRs.** superhuman forks into your account, pushes only to your fork (never upstream, never plain `--force`), and opens PRs under your name. See [Safety rails](#safety-rails).
+
+### Install
+
+One command installs superhuman and its plugin dependencies through the Claude Code CLI. It checks prerequisites first and is safe to re-run:
+
+```bash
 curl -fsSL https://raw.githubusercontent.com/gaurav0107/superhuman/main/install.sh | bash
 ```
 
-The script checks prerequisites, adds each marketplace, and installs all three plugins (idempotent — safe to re-run). Options:
+Prefer to read it first:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/gaurav0107/superhuman/main/install.sh -o install.sh
+bash install.sh --dry-run
+```
 
 | Flag | Effect |
 |---|---|
 | `--skip-ecc` | Skip `everything-claude-code` (the optional reviewer plugin). |
-| `--codex` | Also install for Codex (clone repo + symlink the skill). |
+| `--codex` | Also install for Codex (clones the repo to `~/src/superhuman` and links the skill). |
 | `--dry-run` | Print the commands without running them. |
 
-Prefer to inspect first? `curl -fsSL .../install.sh -o install.sh && bash install.sh --dry-run`.
+Then restart Claude Code (or run `/reload-plugins`).
 
-After it finishes, restart Claude Code (or run `/reload-plugins`).
+<details>
+<summary><b>Manual install (inside Claude Code)</b></summary>
 
-### Manual (Claude Code)
-
-If you'd rather run the plugin commands yourself inside Claude Code:
-
-```
+```text
 /plugin marketplace add https://github.com/obra/superpowers-marketplace
 /plugin install superpowers@superpowers-marketplace
 
@@ -146,22 +141,83 @@ If you'd rather run the plugin commands yourself inside Claude Code:
 /reload-plugins
 ```
 
-### Codex
+</details>
 
-Codex support is declared in `.codex-plugin/plugin.json` and exposed through the `superhuman` skill in `skills/superhuman/SKILL.md`.
+<details>
+<summary><b>Codex</b></summary>
 
-There is no Codex marketplace command yet. Install manually by symlinking the skill into `~/.codex/skills/`:
+Codex has no plugin marketplace yet. `install.sh --codex` does this for you, or by hand:
 
-```
+```bash
 git clone https://github.com/gaurav0107/superhuman ~/src/superhuman
 ln -s ~/src/superhuman/skills/superhuman ~/.codex/skills/superhuman
 ```
 
-Then ask Codex to use the skill:
+Then ask Codex: `Use the superhuman skill to find a good open-source repo and contribute.` Codex has no slash commands; see [Codex command equivalents](#codex-command-equivalents).
 
+</details>
+
+### Verify
+
+```bash
+claude plugin list          # superhuman and superpowers should both be listed
+gh auth status              # must show you logged in
 ```
-Use the superhuman skill to find a good open-source repo and contribute.
+
+In Claude Code, `/contribution-dashboard` should print an empty dashboard rather than "unknown command".
+
+### Quick start: your first contribution
+
+1. **Tell it what you like** (optional, once): `/preferences`. Without it, a default profile is used. See [Usage](#usage).
+2. **Build a shortlist** of repos worth contributing to: `/repo-finder`.
+3. **Contribute**: `/contribute`. It picks an eligible repo and issue, forks the repo into your account, clones it into `~/.superhuman/work/`, plans, builds, and opens a **draft** PR. It iterates on the draft until the self-score converges, and marks it ready for review once the score reaches 80%.
+4. **Come back later**: `/contribution-sweep` records which PRs were merged or closed and lists the open ones that need you (review changes requested, merge conflict, failing CI).
+
+Prefer to choose the target yourself: `/contribute owner/repo` or `/contribute owner/repo 1234`.
+
+### Update
+
+```bash
+claude plugin marketplace update superhuman
+claude plugin update superhuman@superhuman
 ```
+
+Restart Claude Code to load the new version. For Codex: `git -C ~/src/superhuman pull`. Release notes are in [CHANGELOG.md](./CHANGELOG.md).
+
+### Uninstall
+
+```bash
+claude plugin uninstall superhuman@superhuman
+claude plugin marketplace remove superhuman
+rm ~/.codex/skills/superhuman          # only if you installed for Codex
+```
+
+This keeps your history in `~/.superhuman/` (outcomes, lessons, preferences, clones). Delete that folder to remove everything, and remove any crontab entries you added from [Running on a schedule](#running-on-a-schedule-optional). Forks created on GitHub stay in your account.
+
+### Troubleshooting
+
+| You see | What it means / fix |
+|---|---|
+| `PluginMissingError` from `planner` or `builder` | `superpowers` isn't installed: `claude plugin install superpowers@superpowers-marketplace`, then restart. |
+| Slash commands missing after install | Restart Claude Code or run `/reload-plugins`. |
+| `No repo-shortlist.json` | Run `/repo-finder` first, or name a repo: `/contribute owner/repo`. |
+| `gh is not authenticated` / HTTP 401 | `gh auth login`. |
+| `LOCKED: owner/repo` | Another run is working on that repo. A crashed run's lock frees itself after `SUPERHUMAN_LOCK_TTL_HOURS` (6h). |
+| `COOLDOWN: owner/repo until …` | Recent PRs there were rejected or abandoned; the repo is skipped until that date. |
+| `OPEN_PR_CAP` | You already have `SUPERHUMAN_MAX_OPEN_PRS_PER_REPO` open PRs there. `/contribution-sweep` lists them. |
+| `DAILY_CAP` | `SUPERHUMAN_MAX_PRS_PER_DAY` PRs were opened in the last 24h. Wait, or raise the cap. |
+| `validate_json: WARN: python3 jsonschema not available` | `python3 -m pip install jsonschema` for full schema validation. |
+
+Still stuck? [Open an issue](https://github.com/gaurav0107/superhuman/issues) with the command you ran and its output. Security problems go through [SECURITY.md](./SECURITY.md), not public issues.
+
+## Supported runtimes
+
+| Runtime | Entry point | Notes |
+|---|---|---|
+| Claude Code | `.claude-plugin/` | Loads `agents/` as subagents and `commands/` as slash commands. |
+| Codex | `.codex-plugin/` | Loads `skills/superhuman/SKILL.md`, which adapts the same `agents/`, `scripts/`, and `schemas/` contracts for inline execution. |
+
+Claude Code dispatches `Agent(subagent_type=...)` calls. Codex executes the same agent contracts inline by reading the referenced files under `agents/`.
 
 ### Codex command equivalents
 
@@ -223,16 +279,18 @@ One query per topic — languages are free (they union inside a single query, so
 /repo-finder 5 --lang rust --topic cli
 ```
 
-**Single run** — let the orchestrator pick everything:
+**Single run** — let it pick the repo and issue, or name them:
 
-```
-Agent(subagent_type="opensource-contributor", prompt="find a good repo and contribute")
+```text
+/contribute
+/contribute apache/airflow
+/contribute apache/airflow 65685
 ```
 
-**Targeted run** — specify the repo and/or issue:
+**Several in a row** — stops early on a prompt-injection halt or crash:
 
-```
-Agent(subagent_type="opensource-contributor", prompt="contribute to apache/airflow issue #65685")
+```text
+/contribute-loop 3
 ```
 
 **Parallel fleet** — run N independent contributions concurrently:
@@ -246,9 +304,15 @@ Each fleet run gets its own state dir, clone path, and `flock(2)` mutex — they
 
 **Dashboard** — read-only view of live runs, score history, iteration caps, and merge outcomes:
 
-```
+```text
 /contribution-dashboard
 /contribution-dashboard apache/airflow
+```
+
+**Sweep** — record what happened to your open PRs and list the ones that need you:
+
+```text
+/contribution-sweep
 ```
 
 ## Agents
@@ -468,7 +532,7 @@ Yes. The same agent contracts, scripts, and schemas run under both. Claude Code 
 One command: `curl -fsSL https://raw.githubusercontent.com/gaurav0107/superhuman/main/install.sh | bash` — it installs superhuman plus its dependent plugins (`superpowers`, `everything-claude-code`). For Codex, add `--codex` (or clone the repo and symlink `skills/superhuman` into `~/.codex/skills/`). Full steps and the manual command list in [Installation](#installation).
 
 **Does it learn over time?**
-Yes. Every merged or abandoned PR appends to `~/.superhuman/global/merge_outcomes.jsonl`, which calibrates the scorer's historical-signal dimension, and the `lesson-distiller` mines reviewer feedback into typed rule cards. Each run carries a better prior into the next repo than it had on the last one.
+Yes. Every run appends to `~/.superhuman/global/merge_outcomes.jsonl`, `/contribution-sweep` records each PR's real merge or close, and those outcomes calibrate the scorer's historical-signal dimension, and the `lesson-distiller` mines reviewer feedback into typed rule cards. Each run carries a better prior into the next repo than it had on the last one.
 
 ## Development
 
