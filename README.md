@@ -2,13 +2,23 @@
 
 > A multi-agent **harness** that contributes merge-quality pull requests to real open-source projects — and a **closed feedback loop** that scores its own work and iterates until a maintainer would merge it. Runs on [Claude Code](https://claude.com/claude-code) and Codex.
 
+[![GitHub stars](https://img.shields.io/github/stars/gaurav0107/superhuman?style=social)](https://github.com/gaurav0107/superhuman/stargazers)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 [![Version](https://img.shields.io/badge/version-0.6.2-green.svg)](./CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/platform-Claude%20Code%20%7C%20Codex-8A2BE2.svg)](https://claude.com/claude-code)
+[![Website](https://img.shields.io/badge/site-superhuman--oss.com-F0B429)](https://superhuman-oss.com)
 
 Most agent tools are **open-loop**: generate once, hope it's good. superhuman is **closed-loop**. It scores its own pull request before opening it, finds the single weakest dimension, spends an iteration fixing exactly that, re-scores, and repeats until it converges. It's gradient descent on one objective — *will a maintainer merge this?* — with a prior learned from every past outcome.
 
 A coordinated team of agents picks an issue, profiles the repo, plans, builds, scores merge probability, iterates on the weakest dimension, and resolves review comments — autonomously. State lives at `~/.superhuman/` and survives across sessions.
+
+## Track record
+
+**259 PRs opened · 115 merged · 46 repos** — open-source repos with 1,000+ stars, since April 2026 (as of 2026-11-17).
+
+Merged into [Deno](https://github.com/denoland/deno/pull/36321), [ClickHouse](https://github.com/ClickHouse/ClickHouse/pull/106916), [Envoy](https://github.com/envoyproxy/envoy/pull/45510), [Keycloak](https://github.com/keycloak/keycloak/pull/50809), [Apache Superset](https://github.com/apache/superset/pull/42489), [MLflow](https://github.com/mlflow/mlflow/pull/23488), [LlamaIndex](https://github.com/run-llama/llama_index/pull/21891), [Gitea](https://github.com/go-gitea/gitea/pull/38479), [Starship](https://github.com/starship/starship/pull/7497), [Pydantic AI](https://github.com/pydantic/pydantic-ai/pull/5681), [Oxc](https://github.com/oxc-project/oxc/pull/22752), [Unsloth](https://github.com/unslothai/unsloth/pull/7113), [Tesseract](https://github.com/tesseract-ocr/tesseract/pull/4563), [Ant Design](https://github.com/ant-design/ant-design/pull/58241), and more.
+
+If superhuman is useful to you, a ⭐ helps other contributors find it.
 
 ## Proven on
 
