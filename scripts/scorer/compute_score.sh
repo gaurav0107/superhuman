@@ -4,7 +4,8 @@
 # Cap RULES and TRIGGERS live in merge-probability-scorer.md prompt; this
 # script only applies arithmetic when the prompt has decided a cap fires.
 set -euo pipefail
-: "${CLAUDE_PLUGIN_ROOT:?CLAUDE_PLUGIN_ROOT must be set}"
+# Not exported by the harness (template variable only), so derive it from $0.
+export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(CDPATH= cd "$(dirname "$0")/../.." && pwd)}"
 
 DIMS=""
 CAPS="[]"

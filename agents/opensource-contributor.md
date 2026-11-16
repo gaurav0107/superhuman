@@ -90,6 +90,7 @@ Eligibility check (keep inline; not a full agent):
      1) exit 1 ;;                        # blocklisted (reason printed)
      2) exit 1 ;;                        # cooldown (until printed)
      3) exit 1 ;;                        # active lock by another run
+     5) exit 1 ;;                        # already at the open-PR cap there
      10)                                 # config error — gate never ran
        echo "FATAL: reputation gate misconfigured; eligibility unverified." >&2
        exit 10 ;;
@@ -101,6 +102,13 @@ Eligibility check (keep inline; not a full agent):
 
    Keep the `10)` and `*)` branches — without them an unmatched code falls
    through the `case` and the run proceeds as if the gate had passed.
+
+   Then the global daily cap (`SUPERHUMAN_MAX_PRS_PER_DAY`, default 6). Exit 4
+   ends the run before any fork, clone or PR; it is not a repo verdict:
+
+   ```bash
+   "${CLAUDE_PLUGIN_ROOT}/scripts/orchestrator/daily_cap.sh" || exit 1
+   ```
 
    Audit §14: the same gate is invoked from `repo-finder` and the
    `/contribution-fleet` command. One canonical implementation; behavioral
@@ -115,8 +123,8 @@ Eligibility check (keep inline; not a full agent):
 3. **Fork bootstrap.** If no fork: `gh repo fork "$OWNER_REPO" --clone=false`.
    If fork exists: `gh repo sync "$AUTH_USER/$REPO_NAME" --source "$OWNER_REPO"`.
 4. **Clone fork.** Clone from the fork into
-   `/Users/mia/myspace/opensource-work/<repo>`. Set `upstream` remote to
-   the source repo. `origin` is always the fork.
+   `WORKDIR="${SUPERHUMAN_WORKDIR:-$HOME/.superhuman/work}/<repo>"`. Set
+   `upstream` remote to the source repo. `origin` is always the fork.
 5. **Pin single-author identity.** Rule: every commit this orchestrator chain
    produces is authored by **one** identity — the `gh`-authenticated GitHub
    user running the plugin, derived from `gh` and never hard-coded — so

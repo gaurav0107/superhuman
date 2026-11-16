@@ -16,7 +16,8 @@
 # array reads as the integer 20). The redirect-to-file form keeps the `||` off the
 # `$( … )` and is bash-3.2-safe. VERIFY THIS SCRIPT UNDER `bash`, NOT zsh.
 set -euo pipefail
-: "${CLAUDE_PLUGIN_ROOT:?CLAUDE_PLUGIN_ROOT must be set}"
+# Not exported by the harness (template variable only), so derive it from $0.
+export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(CDPATH= cd "$(dirname "$0")/../.." && pwd)}"
 source "${CLAUDE_PLUGIN_ROOT}/scripts/lib/state.sh"
 source "${CLAUDE_PLUGIN_ROOT}/scripts/lib/lesson_checks.sh"
 

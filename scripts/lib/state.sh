@@ -69,3 +69,16 @@ $req
 EOF
   return 0
 }
+
+# jq defs shared by readers of merge_outcomes.jsonl. Rows were written by several
+# generations of the orchestrator: the timestamp is closed_at, ts or recorded_at,
+# and one PR can have several rows (the run's own exit, then the sweep's merged /
+# closed_no_merge). Readers must count each PR once, by its latest row.
+# shellcheck disable=SC2034
+OUTCOMES_JQ='
+  def row_ts: (.closed_at // .ts // .recorded_at // "1970-01-01T00:00:00Z");
+  def row_epoch: row_ts | sub("\\.[0-9]+"; "") | sub("Z$"; "") | strptime("%Y-%m-%dT%H:%M:%S") | mktime;
+  def latest_per_pr:
+    map(select((.pr_url // "") == ""))
+    + (map(select((.pr_url // "") != "")) | group_by(.pr_url) | map(last));
+'

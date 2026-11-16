@@ -2,7 +2,8 @@
 # push_force_with_lease.sh --branch B [--remote R]
 # Hard refusal if --remote is "upstream". Always uses --force-with-lease.
 set -euo pipefail
-: "${CLAUDE_PLUGIN_ROOT:?CLAUDE_PLUGIN_ROOT must be set}"
+# Not exported by the harness (template variable only), so derive it from $0.
+export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(CDPATH= cd "$(dirname "$0")/../.." && pwd)}"
 
 BRANCH=""; REMOTE="origin"
 while [ $# -gt 0 ]; do

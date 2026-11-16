@@ -2,7 +2,8 @@
 # iteration_cap.sh --loc N
 # Emits the iteration cap (3/6/10) for the given LOC delta.
 set -euo pipefail
-: "${CLAUDE_PLUGIN_ROOT:?CLAUDE_PLUGIN_ROOT must be set}"
+# Not exported by the harness (template variable only), so derive it from $0.
+export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(CDPATH= cd "$(dirname "$0")/../.." && pwd)}"
 
 LOC=""
 while [ $# -gt 0 ]; do

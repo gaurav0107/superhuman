@@ -4,7 +4,8 @@
 # Per audit §4: this is single-source-of-truth for /contribute-loop
 # (merge_outcomes.jsonl is only written on normal terminal states).
 set -euo pipefail
-: "${CLAUDE_PLUGIN_ROOT:?CLAUDE_PLUGIN_ROOT must be set}"
+# Not exported by the harness (template variable only), so derive it from $0.
+export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(CDPATH= cd "$(dirname "$0")/../.." && pwd)}"
 source "${CLAUDE_PLUGIN_ROOT}/scripts/lib/state.sh"
 
 REPO=""; OUT=""; ITER="0"; PR=""; TS=""; REASON=""

@@ -161,8 +161,8 @@ reputation_gate() {
   local repo="$1" rc=0
   "${CLAUDE_PLUGIN_ROOT}/scripts/orchestrator/reputation_gate.sh" \
     --repo "$repo" || rc=$?
-  # 0 = eligible; 1 = blocklisted; 2 = cooldown; 3 = active lock. All three are
-  # per-repo verdicts — drop the repo and continue.
+  # 0 = eligible; 1 = blocklisted; 2 = cooldown; 3 = active lock; 5 = open-PR
+  # cap. All are per-repo verdicts — drop the repo and continue.
   #
   # 10 = config error, not a verdict. It applies to every repo equally, so
   # skipping on it drops the whole candidate set and yields an empty shortlist

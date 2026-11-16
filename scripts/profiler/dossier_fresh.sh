@@ -4,7 +4,8 @@
 # dossier is FRESH (dossier_meta.json head_sha == SHA), exit 1 if STALE (mismatch or
 # no dossier_meta). Drives the "re-scan when HEAD moved" gate.
 set -euo pipefail
-: "${CLAUDE_PLUGIN_ROOT:?CLAUDE_PLUGIN_ROOT must be set}"
+# Not exported by the harness (template variable only), so derive it from $0.
+export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(CDPATH= cd "$(dirname "$0")/../.." && pwd)}"
 source "${CLAUDE_PLUGIN_ROOT}/scripts/lib/state.sh"
 
 REPO=""; HEAD_SHA=""

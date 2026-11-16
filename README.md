@@ -175,6 +175,7 @@ Codex does not have slash commands. Use these prompts to invoke the same workflo
 | `/contribute-loop [N]` | `Use the superhuman skill to run N sequential contributions, stopping on suspicious_halt or crash.` |
 | `/contribution-fleet [N]` | Not supported in Codex — fleet runs require parallel subagent dispatch. Run sequential loops instead. |
 | `/contribution-dashboard [owner/repo]` | `Use the superhuman skill to show the contribution dashboard for owner/repo (or all repos if omitted).` |
+| `/contribution-sweep` | `Use the superhuman skill to sweep my open superhuman PRs.` |
 | `/repo-finder [N]` | `Use the superhuman skill to refresh my open-source repo shortlist with up to N candidates.` |
 | `/preferences` | `Use the superhuman skill to set my repo search preferences.` |
 | `/preferences --show` | `Use the superhuman skill to show my repo search preferences and the queries they compile to.` |
@@ -279,6 +280,7 @@ Orchestrator + 10 specialists + 1 shared-state contract document.
 | `/contribute-loop [N]` | Run N sequential contributions (default 3, max 20). Stops on `suspicious_halt` or `crash`. |
 | `/contribution-fleet [N \| owner/repo ...]` | Launch N parallel contributor runs. |
 | `/contribution-dashboard [owner/repo]` | Read-only view of active run, score history, plateaued dimensions, iteration cap, recent merge outcomes, latest loop. |
+| `/contribution-sweep` | Revisit the PRs recorded in `merge_outcomes.jsonl`: record merges/closes the run ended too early to see, list open PRs that need you (changes requested, conflict, CI failing). Shell only, no LLM. |
 
 ## Structure
 
@@ -309,6 +311,7 @@ superhuman/
 │   ├── contribute-loop.md
 │   ├── contribution-dashboard.md
 │   ├── contribution-fleet.md
+│   ├── contribution-sweep.md
 │   ├── preferences.md
 │   └── repo-finder.md
 ├── scripts/                  # Versioned shell extracted from agent prompts (v0.5.0+)
@@ -383,6 +386,57 @@ See [SECURITY.md](./SECURITY.md) for the full safety model and how to report a v
 | Env var | Default | Effect |
 | --- | --- | --- |
 | `SUPERHUMAN_ATTRIBUTION` | `on` | Every PR the plugin opens appends a one-line footer to the **PR body** disclosing it was produced with Superhuman. Set to `off` (also `false`/`0`/`no`, case-insensitive) to suppress it. Commits are never touched either way. |
+| `SUPERHUMAN_WORKDIR` | `~/.superhuman/work` | Where target repos are cloned (`<workdir>/<repo>`). |
+| `SUPERHUMAN_MAX_PRS_PER_DAY` | `6` | No new run starts once this many PRs were opened in the last 24h. A PR counts once its run ends, so parallel fleet runs can overshoot by the fleet width. `0` disables. |
+| `SUPERHUMAN_MAX_OPEN_PRS_PER_REPO` | `2` | A repo where you already have this many open PRs is skipped. `0` disables. |
+| `SUPERHUMAN_LOCK_TTL_HOURS` | `6` | A repo lock whose run has been silent this long is treated as dead and ignored. |
+
+## Running on a schedule (optional)
+
+Nothing is scheduled by default — superhuman runs only when you type a command. If you
+want it to run unattended, add the entries below to **your own** crontab (`crontab -e`;
+works on macOS and Linux). Remove them to stop.
+
+**Before you do:**
+
+- Headless runs can't answer permission prompts. Either pre-approve the tools in that
+  user's `~/.claude/settings.json`, or pass `--permission-mode bypassPermissions`. In
+  both cases the target repo's own tests and build scripts run with everything that OS
+  user can reach, so use a **dedicated user account or VM**, never your daily login and
+  never root.
+- `GH_TOKEN` must be a classic token with the `public_repo` scope: fine-grained tokens
+  can't open PRs on public repos you aren't a member of. That scope can write to every
+  public repo you can, so create it for the dedicated account and nothing else. GitHub's Acceptable Use Policies forbid excessive automated bulk
+  activity, and the account is yours. Keep the caps low.
+- Keep `SUPERHUMAN_ATTRIBUTION=on` so maintainers know what they're reviewing.
+
+**1. Secrets and limits** in `~/.superhuman/cron.env` (`chmod 600`):
+
+```bash
+PATH=/Users/you/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin   # ~/.local/bin = native `claude` installer
+CLAUDE_CODE_OAUTH_TOKEN=...        # from `claude setup-token`
+GH_TOKEN=...
+SUPERHUMAN_MAX_PRS_PER_DAY=6
+SUPERHUMAN_MAX_OPEN_PRS_PER_REPO=1
+```
+
+**2. Crontab entries** (pick what you want):
+
+```cron
+SH=/Users/you/.superhuman
+# Hourly: record merges/closes, list PRs that need you. Shell only, no LLM cost.
+0 * * * *    set -a; . $SH/cron.env; bash "$(jq -r '.plugins["superhuman@superhuman"][0].installPath' ~/.claude/plugins/installed_plugins.json)/scripts/orchestrator/sweep_outcomes.sh" >> $SH/cron.log 2>&1
+# Weekly: refresh the repo shortlist.
+0 6 * * 1    set -a; . $SH/cron.env; cd $SH && claude -p "/superhuman:repo-finder" --permission-mode bypassPermissions --max-budget-usd 10 >> $SH/cron.log 2>&1
+# Every 4h: at most one new contribution (<= 6/day; the daily cap is the hard stop).
+30 */4 * * * set -a; . $SH/cron.env; cd $SH && /usr/bin/lockf -t 0 $SH/cron.lock claude -p "/superhuman:contribute-loop 1" --permission-mode bypassPermissions --max-budget-usd 25 >> $SH/cron.log 2>&1
+```
+
+On Linux replace `/usr/bin/lockf -t 0` with `flock -n`. The lock skips a tick while
+the previous run is still going. `--max-budget-usd` caps a single run's spend.
+
+Answering review comments stays manual: the hourly sweep lists those PRs under
+`NEEDS YOU:` in `cron.log`. You can also run `/contribution-sweep` yourself at any time.
 
 ## FAQ
 

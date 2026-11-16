@@ -4,7 +4,8 @@
 # 2 = real failure or denylist block (caller aborts phase).
 # Token-level allowlist/denylist match (NOT substring).
 set -euo pipefail
-: "${CLAUDE_PLUGIN_ROOT:?CLAUDE_PLUGIN_ROOT must be set}"
+# Not exported by the harness (template variable only), so derive it from $0.
+export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(CDPATH= cd "$(dirname "$0")/../.." && pwd)}"
 source "${CLAUDE_PLUGIN_ROOT}/scripts/lib/state.sh"
 source "${CLAUDE_PLUGIN_ROOT}/scripts/lib/mistakes.sh"
 source "${CLAUDE_PLUGIN_ROOT}/scripts/lib/flake.sh"

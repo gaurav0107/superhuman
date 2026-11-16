@@ -4,7 +4,8 @@
 # Classification (allowed vs denied) is NOT done here — agent prompt handles
 # classification per audit §7.
 set -euo pipefail
-: "${CLAUDE_PLUGIN_ROOT:?CLAUDE_PLUGIN_ROOT must be set}"
+# Not exported by the harness (template variable only), so derive it from $0.
+export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(CDPATH= cd "$(dirname "$0")/../.." && pwd)}"
 
 if ! command -v yq >/dev/null 2>&1; then
   echo "parse_workflows.sh: yq required" >&2

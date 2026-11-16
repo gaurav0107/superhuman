@@ -4,7 +4,8 @@
 # Source: merge-probability-scorer.md Step 3a. Fixes the unbalanced paren bug
 # from line ~257 of the original (audit §18).
 set -euo pipefail
-: "${CLAUDE_PLUGIN_ROOT:?CLAUDE_PLUGIN_ROOT must be set}"
+# Not exported by the harness (template variable only), so derive it from $0.
+export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(CDPATH= cd "$(dirname "$0")/../.." && pwd)}"
 
 RUBRIC_01=""
 MERGE_LOG=""
@@ -24,9 +25,15 @@ done
 [ -z "$RUBRIC_01" ] && { echo "--rubric-01 required" >&2; exit 2; }
 [ -z "$REPO" ]      && { echo "--repo required" >&2; exit 2; }
 
-# Count merged vs total for this repo. Laplace-ish: (m + 1) / (n + 2).
-counts=$(jq -s --arg r "$REPO" '
-  map(select(.repo == $r))
+source "${CLAUDE_PLUGIN_ROOT}/scripts/lib/state.sh"
+
+# Merged vs concluded PRs for this repo, each PR once (its latest row: the sweep's
+# merged/closed_no_merge supersedes the run's own plateau/merge_ready exit).
+# Run-exit reasons are not PR outcomes and stay out of the denominator.
+# Laplace-ish: (m + 1) / (n + 2).
+counts=$(jq -s --arg r "$REPO" "$OUTCOMES_JQ"'
+  map(select(.repo == $r)) | latest_per_pr
+  | map(select(.outcome | IN("merged","closed_no_merge")))
   | {merged: (map(select(.outcome == "merged")) | length),
      total:  length}
 ' "$MERGE_LOG" 2>/dev/null || echo '{"merged":0,"total":0}')

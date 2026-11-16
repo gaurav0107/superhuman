@@ -2,7 +2,8 @@
 # append_score.sh --repo OWNER/REPO --score JSON_BLOB
 # Atomically appends score to current_contribution.json scores[].
 set -euo pipefail
-: "${CLAUDE_PLUGIN_ROOT:?CLAUDE_PLUGIN_ROOT must be set}"
+# Not exported by the harness (template variable only), so derive it from $0.
+export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(CDPATH= cd "$(dirname "$0")/../.." && pwd)}"
 source "${CLAUDE_PLUGIN_ROOT}/scripts/lib/state.sh"
 
 REPO=""

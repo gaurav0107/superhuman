@@ -94,6 +94,7 @@ for repo in "${TARGETS[@]}"; do
     1) ;;                             # blocklisted; reason printed
     2) ;;                             # cooldown; until-date printed
     3) ;;                             # lock held by another run
+    5) ;;                             # already at the open-PR cap there
     *) echo "SKIP $repo (reputation_gate.sh unexpected exit)" ;;
   esac
 done
@@ -201,7 +202,7 @@ psf/requests                     abandoned            5      https://github.com/
   one assistant turn. Sequential dispatch defeats the whole point.
 - **Per-repo isolation is free.** `opensource-contributor` already uses
   `~/.superhuman/repos/<slug>/.lock` via `flock(2)` and clones to
-  `/Users/mia/myspace/opensource-work/<repo>`. Two runs against the
+  `${SUPERHUMAN_WORKDIR:-$HOME/.superhuman/work}/<repo>`. Two runs against the
   same repo cannot both succeed — the second will refuse the lock.
   The fleet launcher de-duplicates the target set anyway.
 - **Never dispatch against a locked repo.** Step 2 checks

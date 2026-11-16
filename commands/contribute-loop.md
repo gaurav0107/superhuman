@@ -67,7 +67,8 @@ Agent(
 
 Apply the canonical reputation gate (`scripts/orchestrator/reputation_gate.sh`)
 walking down the shortlist until one is eligible (exit 0). Repos that are
-blocklisted (1), in cooldown (2), or actively locked (3) are skipped.
+blocklisted (1), in cooldown (2), actively locked (3), or at the open-PR
+cap (5) are skipped.
 
 ```bash
 SHORTLIST="$HOME/.superhuman/global/repo-shortlist.json"
@@ -78,7 +79,7 @@ for r in $(jq -r '.repos[].repo' "$SHORTLIST"); do
   "${CLAUDE_PLUGIN_ROOT}/scripts/orchestrator/reputation_gate.sh" --repo "$r"
   case $? in
     0) REPO="$r"; break ;;
-    *) ;;  # 1=blocklist, 2=cooldown, 3=locked — keep walking
+    *) ;;  # 1=blocklist, 2=cooldown, 3=locked, 5=open-PR cap — keep walking
   esac
 done
 
@@ -89,6 +90,8 @@ if [ -z "$REPO" ]; then
 fi
 
 SLUG="${REPO/\//-}"
+# A run that dies silently writes no summary; never let 2d read the last run's.
+rm -f "$HOME/.superhuman/repos/$SLUG/run_summary.json"
 echo "iter $i/$N → $REPO"
 ```
 
