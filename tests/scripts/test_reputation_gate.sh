@@ -7,6 +7,16 @@ GD="$tmpdir/.superhuman/global"
 mkdir -p "$GD" "$tmpdir/.superhuman/repos/foo-bar"
 NOW="2026-05-18T00:00:00Z"
 
+# Stub gh so the open-PR count never touches the network. FAKE_OPEN unset = gh fails.
+mkdir -p "$tmpdir/bin"
+cat > "$tmpdir/bin/gh" <<'EOF'
+#!/usr/bin/env bash
+[ -n "${FAKE_OPEN:-}" ] || exit 1
+echo "$FAKE_OPEN"
+EOF
+chmod +x "$tmpdir/bin/gh"
+export PATH="$tmpdir/bin:$PATH"
+
 # Eligible: empty blocklist + cooldown
 echo '{"version":1,"blocked":[]}' > "$GD/repo_blocklist.json"
 echo '{"version":1,"generated_at":"'$NOW'","cooldowns":[]}' > "$GD/repo_cooldown.json"
@@ -39,6 +49,28 @@ set -e
 [ "$rc" = "3" ] || { echo "FAIL lock rc: $rc"; exit 1; }
 
 GATE="$CLAUDE_PLUGIN_ROOT/scripts/orchestrator/reputation_gate.sh"
+
+# Stale lock: holder set but the state file idle past the TTL -> free (dead run).
+touch -t 202605170000 "$tmpdir/.superhuman/repos/foo-bar/current_contribution.json"
+HOME="$tmpdir" bash "$GATE" --repo foo/bar --now "$NOW" >/dev/null 2>&1 \
+  || { echo "FAIL stale lock should be treated as free"; exit 1; }
+set +e
+SUPERHUMAN_LOCK_TTL_HOURS=48 HOME="$tmpdir" bash "$GATE" --repo foo/bar --now "$NOW" >/dev/null 2>&1
+rc=$?
+set -e
+[ "$rc" = "3" ] || { echo "FAIL lock within TTL rc: $rc (want 3)"; exit 1; }
+rm "$tmpdir/.superhuman/repos/foo-bar/current_contribution.json"
+
+# Open-PR cap: at the cap -> 5; under it -> 0; cap 0 disables.
+set +e
+FAKE_OPEN=2 HOME="$tmpdir" bash "$GATE" --repo eligible/repo --now "$NOW" >/dev/null 2>&1
+rc=$?
+set -e
+[ "$rc" = "5" ] || { echo "FAIL open-PR cap rc: $rc (want 5)"; exit 1; }
+FAKE_OPEN=1 HOME="$tmpdir" bash "$GATE" --repo eligible/repo --now "$NOW" >/dev/null 2>&1 \
+  || { echo "FAIL under open-PR cap"; exit 1; }
+FAKE_OPEN=9 SUPERHUMAN_MAX_OPEN_PRS_PER_REPO=0 HOME="$tmpdir" bash "$GATE" --repo eligible/repo --now "$NOW" >/dev/null 2>&1 \
+  || { echo "FAIL cap 0 should disable"; exit 1; }
 
 # CLAUDE_PLUGIN_ROOT unset must still produce a VERDICT, by deriving the root from
 # the script's own path. It is a template variable: the harness expands it into

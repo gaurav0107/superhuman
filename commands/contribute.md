@@ -51,6 +51,8 @@ else
 fi
 
 SLUG="${REPO/\//-}"
+# A run that dies silently writes no summary; never let Step 3 read the last run's.
+rm -f "$HOME/.superhuman/repos/$SLUG/run_summary.json"
 ```
 
 ### Step 2: Dispatch the orchestrator

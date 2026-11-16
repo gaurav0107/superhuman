@@ -12,7 +12,8 @@
 # Verdict matrix at impact-auditor.md:118-128 stays in prompt as the
 # authoritative classification rules.
 set -euo pipefail
-: "${CLAUDE_PLUGIN_ROOT:?CLAUDE_PLUGIN_ROOT must be set}"
+# Not exported by the harness (template variable only), so derive it from $0.
+export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
 
 REPO=""; WORKDIR=""; TARGET=""; KIND=""; DESC=""; OUT=""; ISSUE_NUM="0"
 while [ $# -gt 0 ]; do

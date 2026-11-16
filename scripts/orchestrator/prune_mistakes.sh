@@ -8,7 +8,8 @@
 # which is a gawk extension unavailable on macOS BSD awk.  Replaced with
 # an equivalent python3 block-parser that is fully portable.
 set -euo pipefail
-: "${CLAUDE_PLUGIN_ROOT:?CLAUDE_PLUGIN_ROOT must be set}"
+# Not exported by the harness (template variable only), so derive it from $0.
+export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
 
 FILE=""; MAX=""; NOW=""
 while [ $# -gt 0 ]; do

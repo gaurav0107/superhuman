@@ -5,7 +5,8 @@
 # ~/.superhuman/repos/<slug>/repo_scan.json. On invalid scan output, abort WITHOUT
 # publishing (a blank/garbage scan must never ground the dossier). Prints the path.
 set -euo pipefail
-: "${CLAUDE_PLUGIN_ROOT:?CLAUDE_PLUGIN_ROOT must be set}"
+# Not exported by the harness (template variable only), so derive it from $0.
+export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
 source "${CLAUDE_PLUGIN_ROOT}/scripts/lib/state.sh"
 
 REPO=""; WT=""; HEAD_SHA=""; NOW=""

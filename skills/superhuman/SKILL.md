@@ -39,8 +39,8 @@ Entry points:
 - Issue selection, profiling, planning, building, scoring, review dispatch, and
   comment resolution: read the corresponding file in `agents/`.
 - Claude Code slash command requests such as `/contribute`, `/repo-finder`,
-  `/preferences`, `/contribute-loop`, `/contribution-fleet`, and
-  `/contribution-dashboard`: read the matching file under `commands/`, then
+  `/preferences`, `/contribute-loop`, `/contribution-fleet`,
+  `/contribution-dashboard`, and `/contribution-sweep`: read the matching file under `commands/`, then
   translate any `Agent(...)` calls into inline execution of the referenced agent
   contract.
 

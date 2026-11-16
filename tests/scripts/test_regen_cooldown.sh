@@ -28,4 +28,19 @@ jq -e '.cooldowns | map(.repo) | index("a/a")' "$CD" >/dev/null || { echo "FAIL:
 jq -e '.cooldowns | map(.repo) | index("b/b")' "$CD" >/dev/null || { echo "FAIL: b/b missing"; exit 1; }
 jq -e '.cooldowns | map(.repo) | index("c/c") == null' "$CD" >/dev/null || { echo "FAIL: c/c should not be cooled"; exit 1; }
 
+# Legacy rows carry `ts` instead of closed_at (once crashed the whole regen), and
+# one PR can have several rows: the run's exit, then the sweep's real outcome.
+# d/d: the abandoned PR later merged -> latest row wins -> no cooldown.
+# e/e: one PR, two negative rows -> counts once -> no 90d cooldown.
+cat > "$LOG" <<'EOF'
+{"repo":"d/d","pr_url":"https://github.com/d/d/pull/1","outcome":"abandoned","ts":"2026-04-01T00:00:00Z"}
+{"repo":"d/d","pr_url":"https://github.com/d/d/pull/2","outcome":"abandoned","ts":"2026-04-02T00:00:00Z"}
+{"repo":"d/d","pr_url":"https://github.com/d/d/pull/1","outcome":"merged","closed_at":"2026-05-01T00:00:00Z"}
+{"repo":"e/e","pr_url":"https://github.com/e/e/pull/1","outcome":"abandoned","ts":"2026-04-01T00:00:00Z"}
+{"repo":"e/e","pr_url":"https://github.com/e/e/pull/1","outcome":"closed_no_merge","closed_at":"2026-05-01T00:00:00Z"}
+EOF
+HOME="$tmpdir" bash "$CLAUDE_PLUGIN_ROOT/scripts/scorer/regen_cooldown.sh" --now "$NOW" \
+  || { echo "FAIL: regen crashed on legacy ts rows"; exit 1; }
+jq -e '.cooldowns == []' "$CD" >/dev/null || { echo "FAIL: dedupe/legacy: $(jq -c .cooldowns "$CD")"; exit 1; }
+
 echo "OK test_regen_cooldown.sh"

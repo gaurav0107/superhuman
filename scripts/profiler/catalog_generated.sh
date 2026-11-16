@@ -3,7 +3,8 @@
 # Emits {repo, generated_at, entries:[{path, marker, regenerate_cmd}]} on stdout.
 # Cap: 500 entries. Beyond that, log a warning to stderr and truncate.
 set -euo pipefail
-: "${CLAUDE_PLUGIN_ROOT:?CLAUDE_PLUGIN_ROOT must be set}"
+# Not exported by the harness (template variable only), so derive it from $0.
+export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
 
 REPO_DIR="${1:?repo dir required}"
 [ -d "$REPO_DIR" ] || { echo "catalog_generated.sh: not a dir" >&2; exit 2; }

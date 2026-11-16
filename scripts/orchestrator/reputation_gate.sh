@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # reputation_gate.sh --repo OWNER/REPO [--now ISO_TS]
 # Exit 0 = eligible. 1 = blocklisted. 2 = in cooldown. 3 = locked.
+# 5 = we already have SUPERHUMAN_MAX_OPEN_PRS_PER_REPO (default 2) open PRs there.
 # Exit 10 = config error, not a verdict. Must stay distinct from 1/2/3: callers
 # drop a repo on any nonzero code, so reusing a verdict code for a config error
 # would drop repos for a reason unrelated to them. Callers abort on 10.
@@ -89,8 +90,32 @@ CUR="$SD/current_contribution.json"
 if [ -f "$CUR" ]; then
   holder=$(jq -r '.lock_holder // empty' "$CUR" 2>/dev/null)
   if [ -n "$holder" ] && [ "$holder" != "null" ]; then
-    echo "LOCKED: $REPO — held by $holder"
-    exit 3
+    # A run that dies (closed session, context limit, crash) never clears
+    # lock_holder, and no pid survives across Bash tool calls to probe. So the lock
+    # expires: no run writes its state file for longer than the TTL.
+    ttl_h="${SUPERHUMAN_LOCK_TTL_HOURS:-6}"
+    age_s=$(python3 -c 'import os,sys,datetime as d
+now=d.datetime.fromisoformat(sys.argv[2].replace("Z","+00:00")).timestamp()
+print(int(now-os.path.getmtime(sys.argv[1])))' "$CUR" "$NOW")
+    if [ "$age_s" -lt $((ttl_h * 3600)) ]; then
+      echo "LOCKED: $REPO — held by $holder"
+      exit 3
+    fi
+    echo "STALE LOCK: $REPO — $holder idle ${age_s}s (> ${ttl_h}h); treating as free" >&2
+  fi
+fi
+
+# Etiquette: don't pile PRs onto one project. Counts our open PRs there live.
+# A failed lookup does not block (the cap is courtesy, not safety).
+max_open="${SUPERHUMAN_MAX_OPEN_PRS_PER_REPO:-2}"
+if [ "$max_open" -gt 0 ]; then
+  if open=$(gh pr list --repo "$REPO" --author @me --state open --json number --jq length 2>/dev/null); then
+    if [ "$open" -ge "$max_open" ]; then
+      echo "OPEN_PR_CAP: $REPO — $open open PRs (cap $max_open)"
+      exit 5
+    fi
+  else
+    echo "reputation_gate.sh: WARN: could not count open PRs for $REPO; cap not applied" >&2
   fi
 fi
 

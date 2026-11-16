@@ -9,7 +9,8 @@
 # PR-body only; commits are never touched (the single-author commit rule in
 # agents/builder.md is commit-scoped and unchanged).
 set -euo pipefail
-: "${CLAUDE_PLUGIN_ROOT:?CLAUDE_PLUGIN_ROOT must be set}"
+# Not exported by the harness (template variable only), so derive it from $0.
+export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
 
 FALLBACK_URL='https://github.com/gaurav0107/superhuman'
 

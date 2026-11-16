@@ -2,7 +2,8 @@
 # detect_smoke.sh REPO_DIR
 # Emits {repo, generated_at, layers:[{name, cmd, cwd, timeout_s}]} on stdout.
 set -euo pipefail
-: "${CLAUDE_PLUGIN_ROOT:?CLAUDE_PLUGIN_ROOT must be set}"
+# Not exported by the harness (template variable only), so derive it from $0.
+export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
 
 REPO_DIR="${1:?repo dir required}"
 [ -d "$REPO_DIR" ] || { echo "detect_smoke.sh: not a dir: $REPO_DIR" >&2; exit 2; }
