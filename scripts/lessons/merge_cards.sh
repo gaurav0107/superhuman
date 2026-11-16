@@ -7,7 +7,7 @@
 # to kind=semantic (its check is dropped) so it can execute nothing. Rewrites the store.
 set -euo pipefail
 # Not exported by the harness (template variable only), so derive it from $0.
-export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
+export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(CDPATH= cd "$(dirname "$0")/../.." && pwd)}"
 source "${CLAUDE_PLUGIN_ROOT}/scripts/lib/state.sh"
 source "${CLAUDE_PLUGIN_ROOT}/scripts/lib/lesson_checks.sh"
 

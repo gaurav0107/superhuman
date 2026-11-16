@@ -15,7 +15,7 @@ set -euo pipefail
 
 die() { echo "prepare_release.sh: $*" >&2; exit 10; }
 
-ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
+ROOT="${CLAUDE_PLUGIN_ROOT:-$(CDPATH= cd "$(dirname "$0")/../.." && pwd)}"
 PLUGIN="$ROOT/.claude-plugin/plugin.json"
 MARKET="$ROOT/.claude-plugin/marketplace.json"
 CODEX="$ROOT/.codex-plugin/plugin.json"

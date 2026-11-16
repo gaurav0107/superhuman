@@ -5,7 +5,7 @@
 # from line ~257 of the original (audit §18).
 set -euo pipefail
 # Not exported by the harness (template variable only), so derive it from $0.
-export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
+export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(CDPATH= cd "$(dirname "$0")/../.." && pwd)}"
 
 RUBRIC_01=""
 MERGE_LOG=""

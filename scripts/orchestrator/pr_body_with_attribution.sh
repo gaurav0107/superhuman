@@ -10,7 +10,7 @@
 # agents/builder.md is commit-scoped and unchanged).
 set -euo pipefail
 # Not exported by the harness (template variable only), so derive it from $0.
-export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
+export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(CDPATH= cd "$(dirname "$0")/../.." && pwd)}"
 
 FALLBACK_URL='https://github.com/gaurav0107/superhuman'
 

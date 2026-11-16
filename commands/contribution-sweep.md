@@ -1,6 +1,6 @@
 ---
 name: contribution-sweep
-description: Revisit every PR superhuman opened. Records merged / closed outcomes the run ended too early to see (feeds the scorer's merge prior and cooldowns), and lists open PRs that need you — changes requested, merge conflict, CI failing. No LLM work; also safe from cron. Usage — `/contribution-sweep`.
+description: Revisit the PRs recorded in merge_outcomes.jsonl. Records merged / closed outcomes the run ended too early to see (feeds the scorer's merge prior and cooldowns), and lists open PRs that need you — changes requested, merge conflict, CI failing. No LLM work; also safe from cron. Usage — `/contribution-sweep`.
 ---
 
 You run one shell script and relay its output. You do not edit code, reply to

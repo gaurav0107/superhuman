@@ -5,7 +5,7 @@
 # classification per audit §7.
 set -euo pipefail
 # Not exported by the harness (template variable only), so derive it from $0.
-export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
+export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(CDPATH= cd "$(dirname "$0")/../.." && pwd)}"
 
 if ! command -v yq >/dev/null 2>&1; then
   echo "parse_workflows.sh: yq required" >&2

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # sweep_outcomes.sh
-# Revisits every PR superhuman opened that has no final outcome yet, records
+# Revisits every PR recorded in merge_outcomes.jsonl that has no final outcome yet, records
 # merged / closed_no_merge for the ones GitHub has concluded, regenerates
 # cooldowns, and lists open PRs that need a human. No LLM; safe to run from cron.
 #
@@ -13,7 +13,7 @@
 # failures are warned and retried next sweep.
 set -euo pipefail
 # Not exported by the harness (template variable only), so derive it from $0.
-export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
+export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(CDPATH= cd "$(dirname "$0")/../.." && pwd)}"
 source "${CLAUDE_PLUGIN_ROOT}/scripts/lib/state.sh"
 
 [ $# -eq 0 ] || { echo "sweep_outcomes.sh: takes no arguments" >&2; exit 10; }
@@ -46,7 +46,7 @@ while IFS=$'\t' read -r url repo iters; do
       why=$(jq -r '[
           (select(.reviewDecision == "CHANGES_REQUESTED") | "changes requested"),
           (select(.mergeStateStatus == "DIRTY") | "merge conflict"),
-          (select([.statusCheckRollup[]? | (.conclusion // .state)] | any(. == "FAILURE" or . == "ERROR")) | "CI failing")
+          (select([.statusCheckRollup[]? | (.conclusion // .state)] | any(IN("FAILURE","ERROR","TIMED_OUT","STARTUP_FAILURE","ACTION_REQUIRED"))) | "CI failing")
         ] | join(", ")' "$tmp")
       [ -z "$why" ] || echo "NEEDS YOU: $url — $why"
       continue ;;
@@ -58,5 +58,6 @@ while IFS=$'\t' read -r url repo iters; do
   recorded=$((recorded + 1))
 done <<< "$pending"
 
-[ "$recorded" -eq 0 ] || bash "${CLAUDE_PLUGIN_ROOT}/scripts/scorer/regen_cooldown.sh"
+# Always: a sweep that died after recording must not leave cooldowns stale.
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/scorer/regen_cooldown.sh"
 echo "sweep: recorded=$recorded open=$open unreadable=$failed"

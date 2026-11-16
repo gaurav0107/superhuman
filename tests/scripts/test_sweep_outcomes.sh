@@ -21,6 +21,7 @@ echo '{"state":"MERGED","mergedAt":"2026-06-01T00:00:00Z","closedAt":"2026-06-01
 echo '{"state":"CLOSED","mergedAt":null,"closedAt":"2026-06-02T00:00:00Z"}'                    > "$tmpdir/prs/2.json"
 echo '{"state":"OPEN","reviewDecision":"CHANGES_REQUESTED","mergeStateStatus":"CLEAN","statusCheckRollup":[{"conclusion":"FAILURE"}]}' > "$tmpdir/prs/3.json"
 echo '{"state":"OPEN","reviewDecision":"REVIEW_REQUIRED","mergeStateStatus":"CLEAN","statusCheckRollup":[]}' > "$tmpdir/prs/4.json"
+echo '{"state":"OPEN","reviewDecision":"","mergeStateStatus":"CLEAN","statusCheckRollup":[{"conclusion":"TIMED_OUT"}]}' > "$tmpdir/prs/7.json"
 # prs/5.json missing -> gh fails -> skipped, retried later. pull/6 already final.
 cat > "$LOG" <<'EOF'
 {"repo":"a/a","pr_url":"https://github.com/a/a/pull/1","outcome":"merge_ready","iterations":3,"closed_at":"2026-05-01T00:00:00Z"}
@@ -28,14 +29,17 @@ cat > "$LOG" <<'EOF'
 {"repo":"a/a","pr_url":"https://github.com/a/a/pull/3","outcome":"plateau","closed_at":"2026-05-01T00:00:00Z"}
 {"repo":"a/a","pr_url":"https://github.com/a/a/pull/4","outcome":"plateau","closed_at":"2026-05-01T00:00:00Z"}
 {"repo":"a/a","pr_url":"https://github.com/a/a/pull/5","outcome":"plateau","closed_at":"2026-05-01T00:00:00Z"}
+{"repo":"a/a","pr_url":"https://github.com/a/a/pull/7","outcome":"plateau","closed_at":"2026-05-01T00:00:00Z"}
 {"repo":"a/a","pr_url":"https://github.com/a/a/pull/6","outcome":"merged","closed_at":"2026-05-01T00:00:00Z"}
 {"repo":"a/a","outcome":"no_eligible_issue","ts":"2026-05-01T00:00:00Z"}
 EOF
 
 out=$(HOME="$tmpdir" bash "$SWEEP" 2>&1)
-echo "$out" | grep -q "recorded=2 open=2 unreadable=1" || { echo "FAIL counts:"; echo "$out"; exit 1; }
+echo "$out" | grep -q "recorded=2 open=3 unreadable=1" || { echo "FAIL counts:"; echo "$out"; exit 1; }
 echo "$out" | grep -q "NEEDS YOU: https://github.com/a/a/pull/3 — changes requested, CI failing" \
   || { echo "FAIL needs-you line:"; echo "$out"; exit 1; }
+echo "$out" | grep -q "NEEDS YOU: https://github.com/a/a/pull/7 — CI failing" \
+  || { echo "FAIL timed-out check not reported:"; echo "$out"; exit 1; }
 echo "$out" | grep -q "pull/4" && { echo "FAIL quiet open PR should not be reported"; exit 1; }
 
 jq -se 'map(select(.pr_url == "https://github.com/a/a/pull/1")) | last

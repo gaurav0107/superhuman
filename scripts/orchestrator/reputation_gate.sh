@@ -109,7 +109,7 @@ fi
 # A failed lookup does not block (the cap is courtesy, not safety).
 max_open="${SUPERHUMAN_MAX_OPEN_PRS_PER_REPO:-2}"
 if [ "$max_open" -gt 0 ]; then
-  if open=$(gh pr list --repo "$REPO" --author @me --state open --json number --jq length 2>/dev/null); then
+  if open=$(gh pr list --repo "$REPO" --author @me --state open --limit "$max_open" --json number --jq length 2>/dev/null); then
     if [ "$open" -ge "$max_open" ]; then
       echo "OPEN_PR_CAP: $REPO — $open open PRs (cap $max_open)"
       exit 5

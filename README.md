@@ -280,7 +280,7 @@ Orchestrator + 10 specialists + 1 shared-state contract document.
 | `/contribute-loop [N]` | Run N sequential contributions (default 3, max 20). Stops on `suspicious_halt` or `crash`. |
 | `/contribution-fleet [N \| owner/repo ...]` | Launch N parallel contributor runs. |
 | `/contribution-dashboard [owner/repo]` | Read-only view of active run, score history, plateaued dimensions, iteration cap, recent merge outcomes, latest loop. |
-| `/contribution-sweep` | Revisit every PR superhuman opened: record merges/closes the run ended too early to see, list open PRs that need you (changes requested, conflict, CI failing). Shell only, no LLM. |
+| `/contribution-sweep` | Revisit the PRs recorded in `merge_outcomes.jsonl`: record merges/closes the run ended too early to see, list open PRs that need you (changes requested, conflict, CI failing). Shell only, no LLM. |
 
 ## Structure
 
@@ -387,7 +387,7 @@ See [SECURITY.md](./SECURITY.md) for the full safety model and how to report a v
 | --- | --- | --- |
 | `SUPERHUMAN_ATTRIBUTION` | `on` | Every PR the plugin opens appends a one-line footer to the **PR body** disclosing it was produced with Superhuman. Set to `off` (also `false`/`0`/`no`, case-insensitive) to suppress it. Commits are never touched either way. |
 | `SUPERHUMAN_WORKDIR` | `~/.superhuman/work` | Where target repos are cloned (`<workdir>/<repo>`). |
-| `SUPERHUMAN_MAX_PRS_PER_DAY` | `6` | No new run starts once this many PRs were opened in the last 24h. `0` disables. |
+| `SUPERHUMAN_MAX_PRS_PER_DAY` | `6` | No new run starts once this many PRs were opened in the last 24h. A PR counts once its run ends, so parallel fleet runs can overshoot by the fleet width. `0` disables. |
 | `SUPERHUMAN_MAX_OPEN_PRS_PER_REPO` | `2` | A repo where you already have this many open PRs is skipped. `0` disables. |
 | `SUPERHUMAN_LOCK_TTL_HOURS` | `6` | A repo lock whose run has been silent this long is treated as dead and ignored. |
 
@@ -404,15 +404,16 @@ works on macOS and Linux). Remove them to stop.
   both cases the target repo's own tests and build scripts run with everything that OS
   user can reach, so use a **dedicated user account or VM**, never your daily login and
   never root.
-- Use a fine-grained `GH_TOKEN` limited to your forks plus PR/issue write, not your
-  everyday `gh` login. GitHub's Acceptable Use Policies forbid excessive automated bulk
+- `GH_TOKEN` must be a classic token with the `public_repo` scope: fine-grained tokens
+  can't open PRs on public repos you aren't a member of. That scope can write to every
+  public repo you can, so create it for the dedicated account and nothing else. GitHub's Acceptable Use Policies forbid excessive automated bulk
   activity, and the account is yours. Keep the caps low.
 - Keep `SUPERHUMAN_ATTRIBUTION=on` so maintainers know what they're reviewing.
 
 **1. Secrets and limits** in `~/.superhuman/cron.env` (`chmod 600`):
 
 ```bash
-PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin
+PATH=/Users/you/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin   # ~/.local/bin = native `claude` installer
 CLAUDE_CODE_OAUTH_TOKEN=...        # from `claude setup-token`
 GH_TOKEN=...
 SUPERHUMAN_MAX_PRS_PER_DAY=6

@@ -4,7 +4,7 @@
 # Cap: 500 entries. Beyond that, log a warning to stderr and truncate.
 set -euo pipefail
 # Not exported by the harness (template variable only), so derive it from $0.
-export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
+export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(CDPATH= cd "$(dirname "$0")/../.." && pwd)}"
 
 REPO_DIR="${1:?repo dir required}"
 [ -d "$REPO_DIR" ] || { echo "catalog_generated.sh: not a dir" >&2; exit 2; }

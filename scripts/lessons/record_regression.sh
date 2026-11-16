@@ -6,7 +6,7 @@
 # Writers: lesson-distiller (maintainer_reraise), merge-probability-scorer (shipped_violation).
 set -euo pipefail
 # Not exported by the harness (template variable only), so derive it from $0.
-export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
+export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(CDPATH= cd "$(dirname "$0")/../.." && pwd)}"
 source "${CLAUDE_PLUGIN_ROOT}/scripts/lib/state.sh"
 
 REPO=""; RULE_ID=""; KIND=""; PR_URL=""; TS=""
