@@ -440,7 +440,8 @@ File ownership (sole-writer + readers) is documented in `agents/SHARED_STATE.md`
 - **Force-with-lease only.** Pushes use `--force-with-lease` to the contributor's fork — never upstream, never plain `--force`.
 - **Prompt-injection halt.** `resolve-comments` classifies any comment asking it to run shell commands, modify files outside the diff, or fetch from external URLs as `suspicious`, halts the run, and logs to `mistakes.md`.
 - **Learned rules are data, not code.** The `lesson-distiller` mines reviewer feedback into typed rule cards constrained to a fixed schema; a comment attempting a command, URL, or out-of-repo write is classified `suspicious` and never becomes a rule. Deterministic cards may only reference a fixed check registry, and enforced rules feed the scorer's judgment only — they can never expand `allowed_commands.json` or run anything.
-- **Single-author commit rule (commit-scoped).** Every commit is authored by the human contributor identity derived from `gh` in `builder` — no co-author trailers or AI attribution, verified before push. PR *bodies* disclose Superhuman origin by default; see [Configuration](#configuration).
+- **Honors no-AI policies.** Repos whose CONTRIBUTING, AI policy or code of conduct explicitly refuses AI-generated contributions are skipped before an issue is picked; a disclosure-only policy is satisfied by the PR footer.
+- **Single-author commit rule (commit-scoped).** Every commit is authored by the human contributor identity derived from `gh` in `builder` — no co-author trailers or AI attribution, verified before push. PR *bodies* disclose superhuman origin by default; see [Configuration](#configuration).
 - **Reputation cooldown.** Repos where PRs consistently get rejected or ignored land in `repo_cooldown.json` and are skipped by `repo-finder` until the cooldown window expires.
 
 See [SECURITY.md](./SECURITY.md) for the full safety model and how to report a vulnerability.
@@ -449,7 +450,7 @@ See [SECURITY.md](./SECURITY.md) for the full safety model and how to report a v
 
 | Env var | Default | Effect |
 | --- | --- | --- |
-| `SUPERHUMAN_ATTRIBUTION` | `on` | Every PR the plugin opens appends a one-line footer to the **PR body** disclosing it was produced with Superhuman. Set to `off` (also `false`/`0`/`no`, case-insensitive) to suppress it. Commits are never touched either way. |
+| `SUPERHUMAN_ATTRIBUTION` | `on` | Every PR the plugin opens appends a one-line footer to the **PR body** disclosing it was produced with superhuman. Set to `off` (also `false`/`0`/`no`, case-insensitive) to suppress it. Commits are never touched either way. |
 | `SUPERHUMAN_WORKDIR` | `~/.superhuman/work` | Where target repos are cloned (`<workdir>/<repo>`). |
 | `SUPERHUMAN_MAX_PRS_PER_DAY` | `6` | No new run starts once this many PRs were opened in the last 24h. A PR counts once its run ends, so parallel fleet runs can overshoot by the fleet width. `0` disables. |
 | `SUPERHUMAN_MAX_OPEN_PRS_PER_REPO` | `2` | A repo where you already have this many open PRs is skipped. `0` disables. |

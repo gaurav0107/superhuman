@@ -2,7 +2,7 @@
 # pr_body_with_attribution.sh
 # Reads a PR body on stdin, writes it to stdout normalized:
 #   1. scrub any model-authored attribution line (always, regardless of the flag)
-#   2. if SUPERHUMAN_ATTRIBUTION is enabled, append the canonical Superhuman footer
+#   2. if SUPERHUMAN_ATTRIBUTION is enabled, append the canonical superhuman footer
 #      (disabling values: off/false/0/no, case-insensitive)
 # The canonical footer is the single source of truth: scrub strips it too, so
 # re-appending is idempotent and there is never a rogue or double attribution.
@@ -95,5 +95,5 @@ if [ -f "$PLUGIN_JSON" ]; then
   [ -n "$URL_FROM_JSON" ] && REPO_URL="$URL_FROM_JSON"
 fi
 
-printf '%s\n\n---\n🤖 Opened with [Superhuman](%s), an open-source contribution agent.\n' \
+printf '%s\n\n---\n🤖 Opened with [superhuman](%s), the open-source Claude Code plugin.\n' \
   "$SCRUBBED" "$REPO_URL"

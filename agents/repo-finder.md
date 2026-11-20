@@ -231,6 +231,20 @@ if [ "$CLF_RC" -eq 10 ]; then
 fi
 [ "$CLF_RC" -eq 1 ] && echo "SKIP: curated list / book / roadmap"
 
+# HARD SKIP: contribution policy forbids AI-generated / AI-assisted PRs.
+# Canonical gate (also run by issue-selector and orchestrator Phase 0). Fires only
+# on an explicit prohibition sentence in CONTRIBUTING / .github/CONTRIBUTING.md /
+# AI_POLICY / CODE_OF_CONDUCT — never on a disclosure requirement, which our PR
+# footer already satisfies. Exit 6 = skip; 10 = misconfigured, abort the scan.
+AIP_RC=0
+AIP_OUT=$("${CLAUDE_PLUGIN_ROOT}/scripts/orchestrator/ai_policy_gate.sh" \
+  --repo OWNER/REPO --ref "$DEFAULT_BRANCH") || AIP_RC=$?
+if [ "$AIP_RC" -eq 10 ]; then
+  echo "FATAL: AI-policy gate is misconfigured — aborting scan." >&2
+  exit 10
+fi
+[ "$AIP_RC" -eq 6 ] && echo "SKIP: no-AI contribution policy — ${AIP_OUT#NO_AI_POLICY: }"
+
 # HARD SKIP: PR template requires pre-approval. These phrases mean external PRs
 # get bot-closed unless the author is pre-assigned. Racing for assignment is not
 # a viable autonomous strategy.
@@ -493,7 +507,8 @@ same thing.
 - No AI mentions in CONTRIBUTING.md, bots present: 8/10
 - No AI mentions anywhere: 6/10 (unverified, not welcoming — proceed with caution)
 - Ambiguous AI policy language: 4/10
-- Explicit anti-AI contribution policy: 0/10 (hard skip, do not include in output)
+- Explicit anti-AI contribution policy: 0/10 — already hard-skipped in Step 2 by
+  `ai_policy_gate.sh`; if your reading here finds one the gate missed, skip it too
 
 The top rung matters: without it, a repo that explicitly welcomes AI-assisted PRs
 but runs no review bots falls through to "no AI mentions anywhere: 6" — scoring

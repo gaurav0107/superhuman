@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+- **Repos with a no-AI contribution policy are skipped.** New `scripts/orchestrator/ai_policy_gate.sh` reads `CONTRIBUTING.md` (root, `.github/`, `docs/`), `AI_POLICY`-style files and `CODE_OF_CONDUCT.md` and exits 6 (`NO_AI_POLICY: repo — file: "sentence"`) only on an explicit prohibition sentence. Disclosure-only policies, conditional rules ("low-effort", "unless", "without reviewing") and permissive sentences never trigger it, and AI terms are word-bounded. Wired in as a hard skip in `repo-finder` Step 2, `issue-selector` Step 1.5 (`repo_skip_reason` in `issue_candidates.json`) and orchestrator Phase 0, replacing the prose grep there. Covered by `tests/scripts/test_ai_policy_gate.sh`.
+
+### Changed
+- **PR footer uses the lowercase brand.** It now reads `🤖 Opened with [superhuman](…), the open-source Claude Code plugin.`, so it no longer reads as the Superhuman email app. Old-style footers are still scrubbed, so re-runs never double-attribute. `SUPERHUMAN_ATTRIBUTION=off` is unchanged.
+
 ## [0.6.10] — 2026-11-16
 
 ## [0.6.9] — 2026-11-16

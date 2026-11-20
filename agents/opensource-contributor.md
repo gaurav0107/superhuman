@@ -115,9 +115,23 @@ Eligibility check (keep inline; not a full agent):
    diff against the prior inline jq pipeline is empty across the four
    exit-code cases.
 
-1. **AI-policy check.** `gh api "repos/$OWNER_REPO/contents/CONTRIBUTING.md"`
-   (base64-decode). Grep for `AI-generated`, `LLM`, `no bots`, `Copilot
-   prohibited`. If explicit prohibition: abort with the line quoted.
+1. **AI-policy check.** Same canonical gate as repo-finder and issue-selector:
+   it reads CONTRIBUTING / `.github/CONTRIBUTING.md` / AI_POLICY /
+   CODE_OF_CONDUCT and exits 6 only on an explicit "no AI contributions"
+   sentence (a disclosure requirement is not a prohibition — the PR footer
+   already discloses). On 6, abort with the quoted sentence it printed.
+
+   ```bash
+   AIP_RC=0
+   "${CLAUDE_PLUGIN_ROOT}/scripts/orchestrator/ai_policy_gate.sh" \
+     --repo "$OWNER_REPO" || AIP_RC=$?
+   case "$AIP_RC" in
+     0) ;;                               # no prohibition — proceed
+     6) exit 1 ;;                        # NO_AI_POLICY (file + sentence printed)
+     *) echo "FATAL: AI-policy gate returned $AIP_RC; eligibility unverified." >&2
+        exit 10 ;;
+   esac
+   ```
 2. **Rate-limit check.** `gh api rate_limit` — if remaining < 200, wait or
    abort.
 3. **Fork bootstrap.** If no fork: `gh repo fork "$OWNER_REPO" --clone=false`.
