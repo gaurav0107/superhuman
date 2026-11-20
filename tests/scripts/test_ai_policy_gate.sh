@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # tests/scripts/test_ai_policy_gate.sh
 set -euo pipefail
+unset SUPERHUMAN_AI_POLICY_GATE 2>/dev/null || true
 export CLAUDE_PLUGIN_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SCRIPT="$CLAUDE_PLUGIN_ROOT/scripts/orchestrator/ai_policy_gate.sh"
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
@@ -38,6 +39,20 @@ want 0 no-ai-mention    CONTRIBUTING.md 'Run the tests before opening a PR. We d
 want 0 permissive       CONTRIBUTING.md 'AI tools are fine, but we don'"'"'t accept PRs without a linked issue.'
 want 0 conditional      CONTRIBUTING.md 'Low-effort AI-generated PRs will be closed.'
 want 0 substring-ai     CONTRIBUTING.md 'Do not use .get chains; maintainers will not accept them.'
+
+# SUPERHUMAN_AI_POLICY_GATE: unset/on skip; off proceeds but still logs the policy.
+d="$tmp/prohibit-plain"
+rc=0; bash "$SCRIPT" --repo o/r --dir "$d" >/dev/null 2>&1 || rc=$?
+[ "$rc" = 6 ] || fail "flag unset: rc $rc, want 6"
+for v in on ON; do
+  rc=0; SUPERHUMAN_AI_POLICY_GATE=$v bash "$SCRIPT" --repo o/r --dir "$d" >/dev/null 2>&1 || rc=$?
+  [ "$rc" = 6 ] || fail "flag $v: rc $rc, want 6"
+done
+for v in off OFF false 0 no; do
+  rc=0; err=$(SUPERHUMAN_AI_POLICY_GATE=$v bash "$SCRIPT" --repo o/r --dir "$d" 2>&1 >/dev/null) || rc=$?
+  [ "$rc" = 0 ] || fail "flag $v: rc $rc, want 0"
+  printf '%s' "$err" | grep -qF 'NO_AI_POLICY_IGNORED: o/r — CONTRIBUTING.md:' || fail "flag $v: detected policy not logged ($err)"
+done
 
 # Config errors are never verdicts.
 rc=0; bash "$SCRIPT" --dir "$tmp" >/dev/null 2>&1 || rc=$?; [ "$rc" = 10 ] || fail "missing --repo: rc $rc"

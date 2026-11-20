@@ -6,6 +6,10 @@
 #   exit 6  = explicit no-AI policy; prints `NO_AI_POLICY: REPO — FILE: "sentence"`
 #   exit 10 = config error, not a verdict (callers abort, same rule as reputation_gate)
 #
+# SUPERHUMAN_AI_POLICY_GATE (default on) mirrors SUPERHUMAN_ATTRIBUTION: off/false/0/no
+# (case-insensitive) turns the skip off. A detected policy is then still logged to
+# stderr as NO_AI_POLICY_IGNORED and the gate exits 0 — never silently ignored.
+#
 # Reads CONTRIBUTING / AI_POLICY / CODE_OF_CONDUCT files from raw.githubusercontent
 # (no REST quota), or from a local checkout with --dir. A missing file or failed
 # fetch reads as "no policy": the gate only ever skips on text it actually read.
@@ -91,6 +95,12 @@ for f in $POLICY_FILES; do
   # Curly apostrophes to straight ones, so "don’t" and "don't" read the same.
   hit=$(fetch "$f" | LC_ALL=C sed "s/$(printf '\342\200\231')/'/g" | find_prohibition)
   if [ -n "$hit" ]; then
+    case "$(printf '%s' "${SUPERHUMAN_AI_POLICY_GATE:-on}" | tr '[:upper:]' '[:lower:]')" in
+      off|false|0|no)
+        echo "NO_AI_POLICY_IGNORED: $REPO — $f: \"$hit\" (SUPERHUMAN_AI_POLICY_GATE=off, not skipping)" >&2
+        echo "AI_POLICY_OK: $REPO"
+        exit 0 ;;
+    esac
     echo "NO_AI_POLICY: $REPO — $f: \"$hit\""
     exit "$EX_NO_AI"
   fi
