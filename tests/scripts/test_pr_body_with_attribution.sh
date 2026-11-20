@@ -5,7 +5,7 @@ export CLAUDE_PLUGIN_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SCRIPT="$CLAUDE_PLUGIN_ROOT/scripts/orchestrator/pr_body_with_attribution.sh"
 
 fail() { echo "FAIL: $1"; exit 1; }
-marker_count() { printf '%s' "$1" | grep -cF 'Opened with [Superhuman]'; }
+marker_count() { printf '%s' "$1" | grep -cF 'Opened with [superhuman]'; }
 
 BASE='## Summary
 Fixes the thing.'
@@ -16,6 +16,9 @@ OUT="$(printf '%s' "$BASE" | bash "$SCRIPT")"
 printf '%s' "$OUT" | grep -qF 'Fixes the thing.'                || fail "default: base body lost"
 printf '%s' "$OUT" | grep -qF 'github.com/gaurav0107/superhuman' || fail "default: repo url missing"
 [ "$(marker_count "$OUT")" = "1" ]                              || fail "default: marker count != 1"
+# Brand is lowercase "superhuman" (not the Superhuman email app); footer is exactly one line.
+[ "$(printf '%s' "$OUT" | tail -n 1)" = '🤖 Opened with [superhuman](https://github.com/gaurav0107/superhuman), the open-source Claude Code plugin.' ] \
+                                                                || fail "default: footer wording changed"
 
 # 2a. Disable + clean body: returned byte-for-byte.
 for v in off OFF false 0 no; do
@@ -135,6 +138,8 @@ OUT="$(printf '%s' '' | bash "$SCRIPT")"
 #     fires even in the no-structure fallback); result carries just the footer.
 OUT="$(printf '%s' '🤖 Opened with [Superhuman](https://github.com/gaurav0107/superhuman), an open-source contribution agent.' | bash "$SCRIPT")"
 [ "$(marker_count "$OUT")" = "1" ] || fail "attribution-only: marker count != 1"
+# 14b. A pre-rebrand footer ("[Superhuman] … contribution agent") is scrubbed, not kept beside the new one.
+printf '%s' "$OUT" | grep -qF 'open-source contribution agent' && fail "legacy footer not scrubbed"
 
 # 15. Documented residual (pins the structural-signal-gate cost): a rogue line with
 #     NO preceding blank/'---' is NOT scrubbed by the fuzzy rule. If this ever

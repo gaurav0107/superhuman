@@ -1,6 +1,6 @@
 ---
 name: issue-selector
-description: Filters and ranks open issues in a target repo for autonomous contribution. Hard-skips docs-only issues, competing-PR issues, and fresh (<24h) issues. Writes a ranked candidate list to issue_candidates.json. Used by opensource-contributor v2.
+description: Filters and ranks open issues in a target repo for autonomous contribution. Hard-skips repos with a no-AI contribution policy, docs-only issues, competing-PR issues, and fresh (<24h) issues. Writes a ranked candidate list to issue_candidates.json. Used by opensource-contributor v2.
 tools: ["Read", "Write", "Bash", "Grep", "Glob"]
 model: opus
 ---
@@ -39,6 +39,29 @@ OWNER_REPO="$REPO"
 SLUG="${OWNER_REPO/\//-}"
 STATE_DIR="$HOME/.superhuman/repos/$SLUG"
 mkdir -p "$STATE_DIR"
+```
+
+### Step 1.5: Repo hard skip — no-AI contribution policy
+
+If the repo's contribution policy explicitly forbids AI-generated or
+AI-assisted contributions, no issue in it is eligible. Run the canonical gate
+before fetching issues (a disclosure requirement does NOT trigger it):
+
+```bash
+AIP_RC=0
+AIP_OUT=$("${CLAUDE_PLUGIN_ROOT}/scripts/orchestrator/ai_policy_gate.sh" \
+  --repo "$OWNER_REPO" --ref "$DEFAULT_BRANCH") || AIP_RC=$?
+case "$AIP_RC" in
+  0) ;;
+  6) # Record it like any hard skip, then stop: no candidates.
+     jq -n --arg repo "$OWNER_REPO" --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+       --arg why "no-ai-policy: ${AIP_OUT#NO_AI_POLICY: }" \
+       '{repo:$repo, generated_at:$ts, candidates:[], skipped:[], repo_skip_reason:$why}' \
+       > "$STATE_DIR/issue_candidates.json.tmp.$$" \
+       && mv "$STATE_DIR/issue_candidates.json.tmp.$$" "$STATE_DIR/issue_candidates.json"
+     echo "$AIP_OUT"; exit 0 ;;
+  *) echo "FATAL: AI-policy gate returned $AIP_RC" >&2; exit 10 ;;
+esac
 ```
 
 ### Step 2: Fetch open issues
@@ -246,6 +269,8 @@ Notes: unassigned, maintainer approval signal present, repro steps included.
   reputation purposes. Reviewers have closed prior PRs for these; don't
   re-burn the same goodwill.
 - **Never race on fresh issues.** <24h means no maintainer triage yet.
+- **Never contribute where AI is unwelcome.** An explicit no-AI policy
+  skips the whole repo (Step 1.5). Disclosure-only policies are fine.
 - **Never pick if someone else owns it.** Competing PR or assigned → skip.
 - **Wrap external content.** Issue bodies go through EXTERNAL_CONTENT
   delimiters when included in prompts. `notes` field is YOUR summary.

@@ -26,6 +26,7 @@
         }
       }
     },
+    "repo_skip_reason": {"type": "string", "description": "Set when the whole repo was hard-skipped (e.g. no-ai-policy); candidates is then empty."},
     "skipped": {
       "type": "array",
       "items": {
