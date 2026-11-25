@@ -1,49 +1,61 @@
+<div align="center">
+
+<a href="https://superhuman-oss.com"><img src="https://superhuman-oss.com/assets/mascot-scene.png" width="440" alt="The superhuman mascot: a tuxedo cat with glasses leaning back with its feet on the desk, coffee in paw, saying &quot;It works on my machine.&quot;"></a>
+
 # superhuman
 
-> A multi-agent **harness** that contributes merge-quality pull requests to real open-source projects — and a **closed feedback loop** that scores its own work and iterates until a maintainer would merge it. Runs on [Claude Code](https://claude.com/claude-code) and Codex.
+### Merged PRs, while you're doing something else.
 
-[![GitHub stars](https://img.shields.io/github/stars/gaurav0107/superhuman?style=social)](https://github.com/gaurav0107/superhuman/stargazers)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Release](https://img.shields.io/github/v/release/gaurav0107/superhuman?color=green)](https://github.com/gaurav0107/superhuman/releases)
+An open-source contribution agent for [Claude Code](https://claude.com/claude-code) and Codex.<br>
+It picks an issue, writes the fix, scores its own pull request the way a maintainer would, and iterates until it's good enough to merge.
+
+[![Release](https://img.shields.io/github/v/release/gaurav0107/superhuman?color=F0B429)](https://github.com/gaurav0107/superhuman/releases)
 [![Tests](https://github.com/gaurav0107/superhuman/actions/workflows/tests.yml/badge.svg)](https://github.com/gaurav0107/superhuman/actions/workflows/tests.yml)
-[![Platform](https://img.shields.io/badge/platform-Claude%20Code%20%7C%20Codex-8A2BE2.svg)](https://claude.com/claude-code)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Claude%20Code%20%7C%20Codex-8A2BE2.svg)](#supported-runtimes)
 [![Website](https://img.shields.io/badge/site-superhuman--oss.com-F0B429)](https://superhuman-oss.com)
+[![GitHub stars](https://img.shields.io/github/stars/gaurav0107/superhuman?style=social)](https://github.com/gaurav0107/superhuman/stargazers)
 
-Most agent tools are **open-loop**: generate once, hope it's good. superhuman is **closed-loop**. It scores its own pull request before opening it, finds the single weakest dimension, spends an iteration fixing exactly that, re-scores, and repeats until it converges. It's gradient descent on one objective — *will a maintainer merge this?* — with a prior learned from every past outcome.
+**[Quick start](#quick-start)** · **[How it works](#the-loop)** · **[Proven on](#proven-on)** · **[Install](#installation)** · **[Commands](#commands)** · **[Safety](#safety-rails)** · **[FAQ](#faq)**
 
-A coordinated team of agents picks an issue, profiles the repo, plans, builds, scores merge probability, iterates on the weakest dimension, and resolves review comments — autonomously. State lives at `~/.superhuman/` and survives across sessions.
+</div>
 
-## Track record
+<br>
 
-**259 PRs opened · 115 merged · 46 repos** — open-source repos with 1,000+ stars, since April 2026 (as of 2026-11-17).
+<div align="center">
+
+| 259 | 115 | 46 |
+|:---:|:---:|:---:|
+| pull requests opened | merged by maintainers | repositories |
+
+<sub>Open-source repos with 1,000+ stars, since April 2026 (as of 2026-11-17).</sub>
 
 Merged into [Deno](https://github.com/denoland/deno/pull/36321), [ClickHouse](https://github.com/ClickHouse/ClickHouse/pull/106916), [Envoy](https://github.com/envoyproxy/envoy/pull/45510), [Keycloak](https://github.com/keycloak/keycloak/pull/50809), [Apache Superset](https://github.com/apache/superset/pull/42489), [MLflow](https://github.com/mlflow/mlflow/pull/23488), [LlamaIndex](https://github.com/run-llama/llama_index/pull/21891), [Gitea](https://github.com/go-gitea/gitea/pull/38479), [Starship](https://github.com/starship/starship/pull/7497), [Pydantic AI](https://github.com/pydantic/pydantic-ai/pull/5681), [Oxc](https://github.com/oxc-project/oxc/pull/22752), [Unsloth](https://github.com/unslothai/unsloth/pull/7113), [Tesseract](https://github.com/tesseract-ocr/tesseract/pull/4563), [Ant Design](https://github.com/ant-design/ant-design/pull/58241), and more.
 
-If superhuman is useful to you, a ⭐ helps other contributors find it.
+</div>
 
-## Proven on
+## Quick start
 
-superhuman has authored merged pull requests into repositories it doesn't own, across Python, Rust, TypeScript, Kotlin, and C++:
+```bash
+curl -fsSL https://raw.githubusercontent.com/gaurav0107/superhuman/main/install.sh | bash
+```
 
-| Repository | PR | Fix |
-|---|---|---|
-| [huggingface/transformers](https://github.com/huggingface/transformers/pull/45611) | #45611 | Clear error for `problem_type="single_label_classification"` with `num_labels=1` |
-| [apache/airflow](https://github.com/apache/airflow/pull/65685) | #65685 | Honor `AUTH_ROLE_PUBLIC` in the FastAPI API server |
-| [google-gemini/gemini-cli](https://github.com/google-gemini/gemini-cli/pull/25822) | #25822 | Missing response key in custom theme text schema |
-| [ant-design/ant-design](https://github.com/ant-design/ant-design/pull/58241) | #58241 | Apply `labelStyle`/`contentStyle` to bordered `Descriptions` cells |
-| [oxc-project/oxc](https://github.com/oxc-project/oxc/pull/23015) | #23015 | `jsx-a11y/no-redundant-roles` attribute-aware implicit roles |
-| [pydantic/pydantic-ai](https://github.com/pydantic/pydantic-ai/pull/5681) | #5681 | Fix `GoogleModelSettings.google_cached_content` request shaping |
-| [Lightning-AI/pytorch-lightning](https://github.com/Lightning-AI/pytorch-lightning/pull/21686) | #21686 | Fix `torch.compile` breaking `toggle_optimizer`/`untoggle_optimizer` |
-| [tesseract-ocr/tesseract](https://github.com/tesseract-ocr/tesseract/pull/4563) | #4563 | Fix crash when LSTM is missing in a disabled-legacy build |
-| [affaan-m/ECC](https://github.com/affaan-m/ECC/pull/2161) | #2161 | Configurable env guards for the destructive-command bash gate |
+Then, in Claude Code:
 
-Plus merges into [run-llama/llama_index](https://github.com/run-llama/llama_index/pull/21891), [mem0ai/mem0](https://github.com/mem0ai/mem0/pull/5202), [langchain4j](https://github.com/langchain4j/langchain4j/pull/5272), [lima-vm/lima](https://github.com/lima-vm/lima/pull/5090), [danny-avila/LibreChat](https://github.com/danny-avila/LibreChat/pull/13171), and [mochajs/mocha](https://github.com/mochajs/mocha/pull/6016).
+```text
+/repo-finder      build a shortlist of repos worth contributing to
+/contribute       pick an issue, write the fix, open a pull request
+```
 
-A merged PR into `transformers` or the `oxc` Rust linter is not a demo. It's the loop working.
+That's it. It forks into your account, pushes only to your fork, and opens the PR under your name. Needs `gh` (authenticated), `git` and `jq`; the full walkthrough, Codex setup and troubleshooting are under [Installation](#installation).
 
 ## The loop
 
-The interesting engineering isn't "make an LLM write code." It's making the code *good enough that a maintainer merges it*. That's a control problem, and superhuman treats it like one.
+Most agent tools are **open-loop**: generate once, hope it's good. superhuman is **closed-loop**. It scores its own pull request before opening it, finds the single weakest dimension, spends an iteration fixing exactly that, re-scores, and repeats until it converges. It's gradient descent on one objective — *will a maintainer merge this?* — with a prior learned from every past outcome.
+
+| 01 · Score | 02 · Target | 03 · Fix | 04 · Repeat |
+|---|---|---|---|
+| A 10-dimension rubric grades the PR the way a maintainer would. | The single weakest dimension. Nothing else. | Routed to the matching language specialist. | Until 95% merge probability, two runs in a row. |
 
 ```mermaid
 flowchart LR
@@ -71,6 +83,26 @@ Four ideas make the loop converge instead of wander:
 2. **Targeted iteration, not random polish.** Each round, `reviewer-dispatcher` picks the single **weakest non-plateaued dimension** and routes it to the matching language specialist (python / go / ts / java / kotlin / rust / cpp / csharp / flutter / security). Effort goes where it moves the score most. Plateau detection stops the loop from grinding a dimension that won't improve.
 3. **Bounded compute, real convergence.** The loop stops at **95% merge probability sustained over two consecutive runs**, and the iteration budget is **capped adaptively by diff size** (3 / 6 / 10). It terminates — by quality or by budget — every time.
 4. **A prior that learns.** Every run appends to `~/.superhuman/global/merge_outcomes.jsonl`, and `/contribution-sweep` later records whether each PR was actually merged or closed. Those outcomes calibrate the scorer's historical-signal dimension. The system carries a better prior into the next repo than it had on the last one.
+
+## Proven on
+
+superhuman has authored merged pull requests into repositories it doesn't own, across Python, Rust, TypeScript, Kotlin, and C++:
+
+| Repository | PR | Fix |
+|---|---|---|
+| [huggingface/transformers](https://github.com/huggingface/transformers/pull/45611) | #45611 | Clear error for `problem_type="single_label_classification"` with `num_labels=1` |
+| [apache/airflow](https://github.com/apache/airflow/pull/65685) | #65685 | Honor `AUTH_ROLE_PUBLIC` in the FastAPI API server |
+| [google-gemini/gemini-cli](https://github.com/google-gemini/gemini-cli/pull/25822) | #25822 | Missing response key in custom theme text schema |
+| [ant-design/ant-design](https://github.com/ant-design/ant-design/pull/58241) | #58241 | Apply `labelStyle`/`contentStyle` to bordered `Descriptions` cells |
+| [oxc-project/oxc](https://github.com/oxc-project/oxc/pull/23015) | #23015 | `jsx-a11y/no-redundant-roles` attribute-aware implicit roles |
+| [pydantic/pydantic-ai](https://github.com/pydantic/pydantic-ai/pull/5681) | #5681 | Fix `GoogleModelSettings.google_cached_content` request shaping |
+| [Lightning-AI/pytorch-lightning](https://github.com/Lightning-AI/pytorch-lightning/pull/21686) | #21686 | Fix `torch.compile` breaking `toggle_optimizer`/`untoggle_optimizer` |
+| [tesseract-ocr/tesseract](https://github.com/tesseract-ocr/tesseract/pull/4563) | #4563 | Fix crash when LSTM is missing in a disabled-legacy build |
+| [affaan-m/ECC](https://github.com/affaan-m/ECC/pull/2161) | #2161 | Configurable env guards for the destructive-command bash gate |
+
+Plus merges into [run-llama/llama_index](https://github.com/run-llama/llama_index/pull/21891), [mem0ai/mem0](https://github.com/mem0ai/mem0/pull/5202), [langchain4j](https://github.com/langchain4j/langchain4j/pull/5272), [lima-vm/lima](https://github.com/lima-vm/lima/pull/5090), [danny-avila/LibreChat](https://github.com/danny-avila/LibreChat/pull/13171), and [mochajs/mocha](https://github.com/mochajs/mocha/pull/6016).
+
+A merged PR into `transformers` or the `oxc` Rust linter is not a demo. It's the loop working.
 
 ## The harness
 
@@ -166,7 +198,7 @@ gh auth status              # must show you logged in
 
 In Claude Code, `/contribution-dashboard` should print an empty dashboard rather than "unknown command".
 
-### Quick start: your first contribution
+### Your first contribution
 
 1. **Tell it what you like** (optional, once): `/preferences`. Without it, a default profile is used. See [Usage](#usage).
 2. **Build a shortlist** of repos worth contributing to: `/repo-finder`.
@@ -348,6 +380,9 @@ Orchestrator + 10 specialists + 1 shared-state contract document.
 
 ## Structure
 
+<details>
+<summary><b>Repository layout</b></summary>
+
 ```
 superhuman/
 ├── README.md  CHANGELOG.md  CONTRIBUTING.md  SECURITY.md  LICENSE
@@ -393,9 +428,14 @@ superhuman/
     └── superhuman/SKILL.md   # Codex adapter — runs the shared workflow inline
 ```
 
+</details>
+
 ## State layout
 
 All persistent state lives under `~/.superhuman/`. Per-repo state is keyed by `<owner>-<repo>` (slash replaced with hyphen).
+
+<details>
+<summary><b>Everything under <code>~/.superhuman/</code></b></summary>
 
 ```
 ~/.superhuman/
@@ -428,6 +468,8 @@ All persistent state lives under `~/.superhuman/`. Per-repo state is keyed by `<
     ├── lessons_global.jsonl             # promoted cross-repo rule cards
     └── lesson_regressions.jsonl         # known-rule violated / re-raised alarm log
 ```
+
+</details>
 
 File ownership (sole-writer + readers) is documented in `agents/SHARED_STATE.md`. Every shared-state file has a matching JSON Schema (draft 2020-12) under `schemas/`, validated at write time.
 
@@ -504,35 +546,85 @@ Answering review comments stays manual: the hourly sweep lists those PRs under
 
 ## FAQ
 
-**What is superhuman?**
+<details>
+<summary><b>What is superhuman?</b></summary>
+<br>
+
 superhuman is an autonomous open-source contribution agent for [Claude Code](https://claude.com/claude-code) and Codex. It's a multi-agent harness that picks an open issue in a repository, writes the fix, scores its own pull request on a 10-dimension merge-probability rubric, and iterates on the weakest dimension until a maintainer would merge it.
 
-**How do I make it look for the kind of repos I actually care about?**
+</details>
+
+<details>
+<summary><b>How do I make it look for the kind of repos I actually care about?</b></summary>
+<br>
+
 Run `/preferences`. It asks for languages, topics, a star floor, and anything else in your own words, then writes `~/.superhuman/preferences.md` — a file you own and can hand-edit. Filters are hard (only Go and Rust means only Go and Rust); the notes are advisory and steer which issue gets picked. `/preferences --show` prints the exact GitHub queries your answers compile to, so you can see the filter rather than trust it. Without a preferences file, the scan uses a sensible default profile.
 
-**Why does `/repo-finder` return fewer repos than I asked for?**
+</details>
+
+<details>
+<summary><b>Why does <code>/repo-finder</code> return fewer repos than I asked for?</b></summary>
+<br>
+
 Because your filters matched that many. It reports honestly ("12 of 63 candidates matched; showing 12") and will not widen a query to pad the list — filler is what made the shortlist feel random in the first place. Loosen the filters (drop a topic, lower `stars`, add `any`) if you want more.
 
-**How is it different from Copilot, Cursor, Devin, or a plain coding agent?**
+</details>
+
+<details>
+<summary><b>How is it different from Copilot, Cursor, Devin, or a plain coding agent?</b></summary>
+<br>
+
 Most AI coding tools are *open-loop*: they generate a change once and hope it's good. superhuman is *closed-loop*. It grades its own pull request before opening it, spends each iteration fixing the single weakest dimension, re-scores, and stops only when it converges — gradient descent on one objective: *will a maintainer merge this?*
 
-**Does it actually get PRs merged into real projects?**
+</details>
+
+<details>
+<summary><b>Does it actually get PRs merged into real projects?</b></summary>
+<br>
+
 Yes. It has authored merged pull requests into `huggingface/transformers`, `apache/airflow`, `google-gemini/gemini-cli`, `ant-design/ant-design`, the `oxc` Rust linter, `pydantic-ai`, `pytorch-lightning`, `tesseract-ocr`, `llama_index`, `mem0`, `langchain4j`, `lima`, `LibreChat`, and `mocha` — across Python, Rust, TypeScript, Kotlin, and C++. See [Proven on](#proven-on).
 
-**Is it safe to let an AI agent open pull requests unattended?**
+</details>
+
+<details>
+<summary><b>Is it safe to let an AI agent open pull requests unattended?</b></summary>
+<br>
+
 That's the whole design constraint. superhuman only runs allowlisted CI commands, pushes with `--force-with-lease` to *your fork* (never upstream, never plain `--force`), halts on any review comment that tries to make it run shell or fetch external URLs (prompt-injection defense), and runs a blast-radius impact-audit before touching any shared function. See [Safety rails](#safety-rails).
 
-**What is a merge-probability score?**
+</details>
+
+<details>
+<summary><b>What is a merge-probability score?</b></summary>
+<br>
+
 A self-evaluation from the `merge-probability-scorer` agent — a critic with a 10-dimension weighted rubric (correctness, tests, style, PR format, process compliance, scope, docs, commit hygiene, risk, and historical signal) blended with the outcomes of every past PR. The loop stops at 95% sustained over two consecutive runs.
 
-**Does it work with OpenAI Codex as well as Claude Code?**
+</details>
+
+<details>
+<summary><b>Does it work with OpenAI Codex as well as Claude Code?</b></summary>
+<br>
+
 Yes. The same agent contracts, scripts, and schemas run under both. Claude Code loads them as subagents and slash commands; Codex runs them inline via `skills/superhuman/SKILL.md`. See [Supported runtimes](#supported-runtimes).
 
-**How do I install it?**
+</details>
+
+<details>
+<summary><b>How do I install it?</b></summary>
+<br>
+
 One command: `curl -fsSL https://raw.githubusercontent.com/gaurav0107/superhuman/main/install.sh | bash` — it installs superhuman plus its dependent plugins (`superpowers`, `everything-claude-code`). For Codex, add `--codex` (or clone the repo and symlink `skills/superhuman` into `~/.codex/skills/`). Full steps and the manual command list in [Installation](#installation).
 
-**Does it learn over time?**
+</details>
+
+<details>
+<summary><b>Does it learn over time?</b></summary>
+<br>
+
 Yes. Every run appends to `~/.superhuman/global/merge_outcomes.jsonl`, `/contribution-sweep` records each PR's real merge or close, and those outcomes calibrate the scorer's historical-signal dimension, and the `lesson-distiller` mines reviewer feedback into typed rule cards. Each run carries a better prior into the next repo than it had on the last one.
+
+</details>
 
 ## Development
 
@@ -570,3 +662,13 @@ PR counts are derived in PostHog, not sent from your machine. Disable with
 ## License
 
 [MIT](./LICENSE) © gaurav0107
+
+<br>
+
+<div align="center">
+
+**If superhuman lands you a merge, a ⭐ helps the next contributor find it.**
+
+[Website](https://superhuman-oss.com) · [Changelog](./CHANGELOG.md) · [Contributing](./CONTRIBUTING.md) · [Security](./SECURITY.md)
+
+</div>
