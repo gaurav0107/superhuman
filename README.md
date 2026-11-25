@@ -1,13 +1,13 @@
 <div align="center">
 
-<a href="https://superhuman-oss.com"><img src="https://superhuman-oss.com/assets/mascot-scene.png" width="440" alt="The superhuman mascot: a tuxedo cat with glasses leaning back with its feet on the desk, coffee in paw, saying &quot;It works on my machine.&quot;"></a>
+<a href="https://superhuman-oss.com"><img src="https://superhuman-oss.com/assets/mascot-hero.jpg" width="520" alt="The superhuman mascot: a tuxedo cat in glasses and a hoodie, leaning back with its feet on the desk and a coffee in its paw, next to an open laptop."></a>
 
 # superhuman
 
 ### Merged PRs, while you're doing something else.
 
 An open-source contribution agent for [Claude Code](https://claude.com/claude-code) and Codex.<br>
-It picks an issue, writes the fix, scores its own pull request the way a maintainer would, and iterates until it's good enough to merge.
+It picks an issue, writes the fix, opens a draft pull request, scores it the way a maintainer would, and iterates until it's ready for review.
 
 [![Release](https://img.shields.io/github/v/release/gaurav0107/superhuman?color=F0B429)](https://github.com/gaurav0107/superhuman/releases)
 [![Tests](https://github.com/gaurav0107/superhuman/actions/workflows/tests.yml/badge.svg)](https://github.com/gaurav0107/superhuman/actions/workflows/tests.yml)
@@ -30,7 +30,7 @@ It picks an issue, writes the fix, scores its own pull request the way a maintai
 
 <sub>Open-source repos with 1,000+ stars, since April 2026 (as of 2026-11-17).</sub>
 
-Merged into [Deno](https://github.com/denoland/deno/pull/36321), [ClickHouse](https://github.com/ClickHouse/ClickHouse/pull/106916), [Envoy](https://github.com/envoyproxy/envoy/pull/45510), [Keycloak](https://github.com/keycloak/keycloak/pull/50809), [Apache Superset](https://github.com/apache/superset/pull/42489), [MLflow](https://github.com/mlflow/mlflow/pull/23488), [LlamaIndex](https://github.com/run-llama/llama_index/pull/21891), [Gitea](https://github.com/go-gitea/gitea/pull/38479), [Starship](https://github.com/starship/starship/pull/7497), [Pydantic AI](https://github.com/pydantic/pydantic-ai/pull/5681), [Oxc](https://github.com/oxc-project/oxc/pull/22752), [Unsloth](https://github.com/unslothai/unsloth/pull/7113), [Tesseract](https://github.com/tesseract-ocr/tesseract/pull/4563), [Ant Design](https://github.com/ant-design/ant-design/pull/58241), and more.
+Merged into [Deno](https://github.com/denoland/deno/pull/36321), [ClickHouse](https://github.com/ClickHouse/ClickHouse/pull/106916), [Google's gemini-cli](https://github.com/google-gemini/gemini-cli/pull/25822), [mitmproxy](https://github.com/mitmproxy/mitmproxy/pull/8326), [MLflow](https://github.com/mlflow/mlflow/pull/23488), [LlamaIndex](https://github.com/run-llama/llama_index/pull/21891), [Gitea](https://github.com/go-gitea/gitea/pull/38479), [Pydantic AI](https://github.com/pydantic/pydantic-ai/pull/5681), [Oxc](https://github.com/oxc-project/oxc/pull/23015), [PyTorch Lightning](https://github.com/Lightning-AI/pytorch-lightning/pull/21686), [Ant Design](https://github.com/ant-design/ant-design/pull/58241), and more. Every one, with its link, is on the [Merge Wall](https://superhuman-oss.com/merged).
 
 </div>
 
@@ -47,11 +47,11 @@ Then, in Claude Code:
 /contribute       pick an issue, write the fix, open a pull request
 ```
 
-That's it. It forks into your account, pushes only to your fork, and opens the PR under your name. Needs `gh` (authenticated), `git` and `jq`; the full walkthrough, Codex setup and troubleshooting are under [Installation](#installation).
+That's it. It forks into your account, pushes only to your fork, and opens the PR as a draft under your name. Needs `gh` (authenticated), `git`, `jq` and `python3`; the full walkthrough, Codex setup and troubleshooting are under [Installation](#installation).
 
 ## The loop
 
-Most agent tools are **open-loop**: generate once, hope it's good. superhuman is **closed-loop**. It scores its own pull request before opening it, finds the single weakest dimension, spends an iteration fixing exactly that, re-scores, and repeats until it converges. It's gradient descent on one objective — *will a maintainer merge this?* — with a prior learned from every past outcome.
+superhuman is **closed-loop**. It opens the pull request as a draft, scores it, finds the single weakest dimension, spends an iteration fixing exactly that, re-scores, and repeats until it converges, marking the PR ready for review once the score reaches 80%. It's gradient descent on one objective — *will a maintainer merge this?* — with a prior learned from every past outcome.
 
 | 01 · Score | 02 · Target | 03 · Fix | 04 · Repeat |
 |---|---|---|---|
@@ -91,16 +91,17 @@ superhuman has authored merged pull requests into repositories it doesn't own, a
 | Repository | PR | Fix |
 |---|---|---|
 | [huggingface/transformers](https://github.com/huggingface/transformers/pull/45611) | #45611 | Clear error for `problem_type="single_label_classification"` with `num_labels=1` |
-| [apache/airflow](https://github.com/apache/airflow/pull/65685) | #65685 | Honor `AUTH_ROLE_PUBLIC` in the FastAPI API server |
+| [denoland/deno](https://github.com/denoland/deno/pull/36321) | #36321 | Apply backpressure in `Readable.toWeb()` |
+| [ClickHouse/ClickHouse](https://github.com/ClickHouse/ClickHouse/pull/106916) | #106916 | Mask sensitive data on `Exception::addMessage` |
 | [google-gemini/gemini-cli](https://github.com/google-gemini/gemini-cli/pull/25822) | #25822 | Missing response key in custom theme text schema |
 | [ant-design/ant-design](https://github.com/ant-design/ant-design/pull/58241) | #58241 | Apply `labelStyle`/`contentStyle` to bordered `Descriptions` cells |
 | [oxc-project/oxc](https://github.com/oxc-project/oxc/pull/23015) | #23015 | `jsx-a11y/no-redundant-roles` attribute-aware implicit roles |
 | [pydantic/pydantic-ai](https://github.com/pydantic/pydantic-ai/pull/5681) | #5681 | Fix `GoogleModelSettings.google_cached_content` request shaping |
 | [Lightning-AI/pytorch-lightning](https://github.com/Lightning-AI/pytorch-lightning/pull/21686) | #21686 | Fix `torch.compile` breaking `toggle_optimizer`/`untoggle_optimizer` |
-| [tesseract-ocr/tesseract](https://github.com/tesseract-ocr/tesseract/pull/4563) | #4563 | Fix crash when LSTM is missing in a disabled-legacy build |
-| [affaan-m/ECC](https://github.com/affaan-m/ECC/pull/2161) | #2161 | Configurable env guards for the destructive-command bash gate |
+| [mitmproxy/mitmproxy](https://github.com/mitmproxy/mitmproxy/pull/8326) | #8326 | Bracket IPv6 literals in the upstream `CONNECT` authority |
+| [go-gitea/gitea](https://github.com/go-gitea/gitea/pull/38479) | #38479 | Serve the noarch Alpine index for any requested architecture |
 
-Plus merges into [run-llama/llama_index](https://github.com/run-llama/llama_index/pull/21891), [mem0ai/mem0](https://github.com/mem0ai/mem0/pull/5202), [langchain4j](https://github.com/langchain4j/langchain4j/pull/5272), [lima-vm/lima](https://github.com/lima-vm/lima/pull/5090), [danny-avila/LibreChat](https://github.com/danny-avila/LibreChat/pull/13171), and [mochajs/mocha](https://github.com/mochajs/mocha/pull/6016).
+Plus merges into [run-llama/llama_index](https://github.com/run-llama/llama_index/pull/21891), [mem0ai/mem0](https://github.com/mem0ai/mem0/pull/5202), [langchain4j](https://github.com/langchain4j/langchain4j/pull/5272), and [lima-vm/lima](https://github.com/lima-vm/lima/pull/5090). The full list is on the [Merge Wall](https://superhuman-oss.com/merged).
 
 A merged PR into `transformers` or the `oxc` Rust linter is not a demo. It's the loop working.
 
@@ -571,10 +572,10 @@ Because your filters matched that many. It reports honestly ("12 of 63 candidate
 </details>
 
 <details>
-<summary><b>How is it different from Copilot, Cursor, Devin, or a plain coding agent?</b></summary>
+<summary><b>How is it different from other coding agents?</b></summary>
 <br>
 
-Most AI coding tools are *open-loop*: they generate a change once and hope it's good. superhuman is *closed-loop*. It grades its own pull request before opening it, spends each iteration fixing the single weakest dimension, re-scores, and stops only when it converges — gradient descent on one objective: *will a maintainer merge this?*
+Most coding agents are graded by their own tests. superhuman is built around what one project's maintainers accept: it learns the project's conventions from its merged pull requests, opens a draft, grades it against a maintainer-style rubric, spends each iteration fixing the single weakest dimension, re-scores, and stops only when it converges — gradient descent on one objective: *will a maintainer merge this?*
 
 </details>
 
@@ -582,7 +583,7 @@ Most AI coding tools are *open-loop*: they generate a change once and hope it's 
 <summary><b>Does it actually get PRs merged into real projects?</b></summary>
 <br>
 
-Yes. It has authored merged pull requests into `huggingface/transformers`, `apache/airflow`, `google-gemini/gemini-cli`, `ant-design/ant-design`, the `oxc` Rust linter, `pydantic-ai`, `pytorch-lightning`, `tesseract-ocr`, `llama_index`, `mem0`, `langchain4j`, `lima`, `LibreChat`, and `mocha` — across Python, Rust, TypeScript, Kotlin, and C++. See [Proven on](#proven-on).
+Yes. It has authored merged pull requests into `huggingface/transformers`, `denoland/deno`, `ClickHouse`, `google-gemini/gemini-cli`, `ant-design/ant-design`, the `oxc` Rust linter, `pydantic-ai`, `pytorch-lightning`, `mitmproxy`, `gitea`, `llama_index`, `mem0`, `langchain4j`, and `lima` — across Python, Rust, TypeScript, Kotlin, and C++. See [Proven on](#proven-on).
 
 </details>
 
@@ -598,7 +599,7 @@ That's the whole design constraint. superhuman only runs allowlisted CI commands
 <summary><b>What is a merge-probability score?</b></summary>
 <br>
 
-A self-evaluation from the `merge-probability-scorer` agent — a critic with a 10-dimension weighted rubric (correctness, tests, style, PR format, process compliance, scope, docs, commit hygiene, risk, and historical signal) blended with the outcomes of every past PR. The loop stops at 95% sustained over two consecutive runs.
+A self-evaluation from the `merge-probability-scorer` agent — a critic with a 10-dimension weighted rubric (correctness, tests, style, PR format, process compliance, scope, docs, commit hygiene, risk, and historical signal) blended with the outcomes of every past PR. The PR is marked ready for review at 80%, and the loop stops at 95% sustained over two consecutive runs. It is the agent's own estimate, not a measured merge rate.
 
 </details>
 
