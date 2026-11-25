@@ -40,7 +40,7 @@ Merged into [Deno](https://github.com/denoland/deno/pull/36321), [ClickHouse](ht
 curl -fsSL https://raw.githubusercontent.com/gaurav0107/superhuman/main/install.sh | bash
 ```
 
-Then, in Claude Code:
+Then restart Claude Code (or run `/reload-plugins`), and:
 
 ```text
 /repo-finder      build a shortlist of repos worth contributing to
@@ -51,11 +51,11 @@ That's it. It forks into your account, pushes only to your fork, and opens the P
 
 ## The loop
 
-superhuman is **closed-loop**. It opens the pull request as a draft, scores it, finds the single weakest dimension, spends an iteration fixing exactly that, re-scores, and repeats until it converges, marking the PR ready for review once the score reaches 80%. It's gradient descent on one objective — *will a maintainer merge this?* — with a prior learned from every past outcome.
+superhuman is **closed-loop**. It opens the pull request as a draft, scores it, finds the single weakest dimension, spends an iteration fixing exactly that, re-scores, and repeats. Once the score reaches 80% it marks the PR ready for review, unless a safety check has halted the run. It aims for 95% on two runs in a row, and stops earlier at its iteration cap, on a plateau, or on a safety halt. It's gradient descent on one objective — *will a maintainer merge this?* — with a prior learned from every past outcome.
 
 | 01 · Score | 02 · Target | 03 · Fix | 04 · Repeat |
 |---|---|---|---|
-| A 10-dimension rubric grades the PR the way a maintainer would. | The single weakest dimension. Nothing else. | Routed to the matching language specialist. | Until 95% merge probability, two runs in a row. |
+| A 10-dimension rubric grades the PR the way a maintainer would. | The single weakest dimension. Nothing else. | Routed to the matching language specialist. | Toward 95% on two runs in a row, or until the iteration cap, a plateau or a safety halt. |
 
 ```mermaid
 flowchart LR
@@ -575,7 +575,7 @@ Because your filters matched that many. It reports honestly ("12 of 63 candidate
 <summary><b>How is it different from other coding agents?</b></summary>
 <br>
 
-Most coding agents are graded by their own tests. superhuman is built around what one project's maintainers accept: it learns the project's conventions from its merged pull requests, opens a draft, grades it against a maintainer-style rubric, spends each iteration fixing the single weakest dimension, re-scores, and stops only when it converges — gradient descent on one objective: *will a maintainer merge this?*
+Most coding agents are graded by their own tests. superhuman is built around what one project's maintainers accept: it learns the project's conventions from its merged pull requests, opens a draft, grades it against a maintainer-style rubric, spends each iteration fixing the single weakest dimension, and re-scores until it reaches its target or a stop condition — gradient descent on one objective: *will a maintainer merge this?*
 
 </details>
 
@@ -599,7 +599,7 @@ That's the whole design constraint. superhuman only runs allowlisted CI commands
 <summary><b>What is a merge-probability score?</b></summary>
 <br>
 
-A self-evaluation from the `merge-probability-scorer` agent — a critic with a 10-dimension weighted rubric (correctness, tests, style, PR format, process compliance, scope, docs, commit hygiene, risk, and historical signal) blended with the outcomes of every past PR. The PR is marked ready for review at 80%, and the loop stops at 95% sustained over two consecutive runs. It is the agent's own estimate, not a measured merge rate.
+A self-evaluation from the `merge-probability-scorer` agent — a critic with a 10-dimension weighted rubric (correctness, tests, style, PR format, process compliance, scope, docs, commit hygiene, risk, and historical signal) blended with the outcomes of every past PR. The PR is marked ready for review at 80% unless a safety check has halted the run. The loop's target is 95% sustained over two consecutive runs; it also stops at its iteration cap, on a plateau, or on a safety halt. It is the agent's own estimate, not a measured merge rate.
 
 </details>
 
